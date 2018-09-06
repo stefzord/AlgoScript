@@ -698,6 +698,20 @@ sub MakeAST_DIV{
 	my ($lvalue, $rvalue)=@_;
 	return ['DIV', $lvalue, $rvalue];
 }
+sub MakeAST_INTERNALFUNC{
+	my $func = shift;
+	return ['INTERNALFUNC', $func];
+}
+sub getINTERNALFUNC{
+	my $func = shift;
+	return $func->[1] if($func->[0] eq 'INTERNALFUNC');
+	return MakeAST_ERROR("N'est pas une fonction interne " . $func->[0]);
+}
+sub EstINTERNALFUNC{
+	my $valeur = shift;
+	return 1 if($valeur->[0] eq 'INTERNALFUNC');
+	return 0;
+}
 #On enleve les elements NOTHING
 #des AST
 sub RemoveNOTHING{
@@ -776,6 +790,7 @@ sub MakeSUB{
 	return MakeSUB_FUNCASSIGN($AST) if($AST->[0] eq 'FUNCASSIGN');
 	#return MakeSUB_FUNC($AST) if($AST->[0] eq 'FUNC');
 	return MakeSUB_LAMBDA($AST) if($AST->[0] eq 'LAMBDA');
+	return MakeSUB_INTERNALFUNC($AST) if($AST->[0] eq 'INTERNALFUNC');
 	return MakeSUB_DEFLAMBDA($AST) if($AST->[0] eq 'DEFLAMBDA');
 	return MakeSUB_DEFRANGE ($AST) if($AST->[0] eq 'DEFRANGE');
 	return MakeSUB_DEFTABLO($AST) if($AST->[0] eq 'DEFTABLO');
@@ -888,6 +903,13 @@ sub MakeSUB_NUMERIC{
 	my $AST = shift;
 	return sub{
 		MakeAST_NUMERIC($AST->[1]);
+	}
+}
+
+sub MakeSUB_INTERNALFUNC{
+	my $AST = shift;
+	return sub{
+		return $AST;
 	}
 }
 
@@ -1603,30 +1625,8 @@ sub MakeSUB_TABLO{
 		return $AST;
 	}
 }
-sub HACK_TEST{
-	my $context = shift;
-	my $arguments= shift;
-	my $nextArgument = MakeIterator_LIST($arguments);
-	my $currentArgument = $nextArgument->();
-	my $valeur = MakeSUB($currentArgument)->($context);
 
-	my $max_x;
-	my $max_y;
-	getmaxyx($max_y, $max_x);
-	my $x = 10;
-	my $y = 10;
-	clear();
-	foreach my $i (1..5){
-		move($y, $x);
-		printw("o");
-		refresh();
-		sleep(1);
-		$x++;
-		$y++;
-	}
-	return ['VOID'];
-}
-sub HACK_EFFACE{
+sub internal_EFFACE{
 	if($GLOBAL_MODE eq 'ECRAN'){
 		clear();
 		refresh();
@@ -1640,37 +1640,35 @@ sub HACK_EFFACE{
 	}
 	return ['VOID'];
 }
-sub HACK_GETMAXX{
+
+sub internal_GETMAXX{
 	return MakeAST_NUMERIC(getmaxx());
 }
-sub HACK_GETMAXY{
+
+sub internal_GETMAXY{
 	return MakeAST_NUMERIC(getmaxy());
 }
-sub HACK_POS{
+
+sub internal_POS{
 	my $context = shift;
-	my $arguments= shift;
-	my $nextArgument = MakeIterator_LIST($arguments);
-	my $currentArgument = $nextArgument->();
-	my $valeur = MakeSUB($currentArgument)->($context);
+	my $valeur = shift;
+	my $valeur2= shift;
 	return MakeAST_ERROR("Le premier parametre de la fonction 'pos' n'est pas numerique !") if(!EstNUMERIC($valeur));
+	return MakeAST_ERROR("Le second parametre de la fonction 'pos' n'est pas numerique !") if(!EstNUMERIC($valeur2));
 	my $x = $valeur->[1];
-	$currentArgument = $nextArgument->();
-	$valeur = MakeSUB($currentArgument)->($context);
-	return MakeAST_ERROR("Le second parametre de la fonction 'pos' n'est pas numerique !") if(!EstNUMERIC($valeur));
-	my $y = $valeur->[1];
+	my $y = $valeur2->[1];
 	move($y,$x);
 	return ['VOID'];
 }
-sub HACK_RAFRAICHIS{
+
+sub internal_RAFRAICHIS{
 	refresh();
 	return ['VOID'];
 }
-sub HACK_MODE{
+
+sub internal_MODE{
 	my $context = shift;
-	my $arguments= shift;
-	my $nextArgument = MakeIterator_LIST($arguments);
-	my $currentArgument = $nextArgument->();
-	my $valeur = MakeSUB($currentArgument)->($context);
+	my $valeur = shift;
 	return MakeAST_ERROR("N'est pas du texte, pour fonction 'mode'!") if(!EstSTRING($valeur));
 	my $texte = $valeur->[1];
 	if($texte eq 'LIGNE'){
@@ -1687,57 +1685,74 @@ sub HACK_MODE{
 	}
 	return MakeAST_ERROR("Mode $texte inconnu !");
 }
-#sub do_mode_LIGNE{
-#	$GLOBAL_MODE='LIGNE';
+
+sub do_mode_LIGNE{
+	$GLOBAL_MODE='LIGNE';
 #	echo();
 #	nocbreak();
 #	curs_set(1);
 #	endwin;
-#}
-#sub do_mode_ECRAN{
-#	$GLOBAL_MODE='ECRAN';
+}
+sub do_mode_ECRAN{
+	$GLOBAL_MODE='ECRAN';
 #	initscr;
 #	noecho();
 #	cbreak();
 #	curs_set(0);
-#}
-#sub do_mode_TAMPON{
+}
+sub do_mode_TAMPON{
 #	do_mode_ECRAN();
-#	$GLOBAL_MODE='TAMPON';
-#}
-sub HACK_ROUND{
+	$GLOBAL_MODE='TAMPON';
+}
+
+# Appel une fonction interne,
+# une fonction en perl
+sub Call_Internal{
 	my $context = shift;
-	my $arguments= shift;
+	my $internalFunction = shift;
+	my $arguments = shift;
+	my @parameters = ();
 	my $nextArgument = MakeIterator_LIST($arguments);
-	my $currentArgument = $nextArgument->();
-	my $valeur = MakeSUB($currentArgument)->($context);
-	return MakeAST_ERROR("N'est pas numerique, pour arrondi !") if(!EstNUMERIC($valeur));
+	my $hasElement = 1;
+	while($hasElement){
+		my $element = $nextArgument->();
+		if(!EstNULL($element)){
+			# ATTENTION:
+			# parametres gloutons pour l'instant
+			my $val = MakeSUB($element)->($context);
+			return $val if(EstUneERREUR($val));
+			push(@parameters, $val);
+		}else{
+			$hasElement = 0;
+		}
+	}
+	my $iFunc = getINTERNALFUNC($internalFunction);
+	$iFunc->($context,@parameters);
+}
+sub internal_ROUND{
+	my $context = shift;
+	my $valeur  = shift;
+	return MakeAST_ERROR("N'est pas numerique, pour arrondi !". $valeur->[1]) if(!EstNUMERIC($valeur));
 	return MakeAST_NUMERIC(sprintf("%.4f", $valeur->[1]));
 }
-sub HACK_ARRONDIS{
+
+sub internal_ARRONDIS{
 	my $context = shift;
-	my $arguments= shift;
-	my $nextArgument = MakeIterator_LIST($arguments);
-	my $currentArgument = $nextArgument->();
-	my $valeur = MakeSUB($currentArgument)->($context);
+	my $valeur  = shift;
 	return MakeAST_ERROR("N'est pas numerique, pour arrondi !") if(!EstNUMERIC($valeur));
 	return MakeAST_NUMERIC(sprintf("%.0f", $valeur->[1]));
 }
-sub HACK_HASARD{
+
+sub internal_HASARD{ 
 	my $context = shift;
-	my $arguments= shift;
-	my $nextArgument = MakeIterator_LIST($arguments);
-	my $currentArgument = $nextArgument->();
-	my $valeur = MakeSUB($currentArgument)->($context);
+	my $valeur = shift;
 	return MakeAST_ERROR("N'est pas numerique, pour hasard !") if(!EstNUMERIC($valeur));
 	return MakeAST_NUMERIC(rand($valeur->[1]));
 }
-sub HACK_LENGTH{
+
+sub internal_LENGTH{
 	my $context = shift;
-	my $arguments= shift;
-	my $nextArgument = MakeIterator_LIST($arguments);
-	my $currentArgument = $nextArgument->();
-	my $valeur = MakeSUB($currentArgument)->($context);
+	my $valeur = shift; 
 	#La longueur d'un tablo est scalar(@tablo)
 	if(EstTABLO($valeur)){
 		my $tab= $valeur->[2];
@@ -1752,45 +1767,35 @@ sub HACK_LENGTH{
 	$val = "$val" if(EstNUMERIC($valeur));
 	return MakeAST_NUMERIC(length($val));
 }
-sub HACK_RESTE{
+
+sub internal_RESTE{
 	my $context = shift;
-	my $arguments = shift;
-	my $nextArgument = MakeIterator_LIST($arguments);
-	my $argument1 = $nextArgument->();
-	my $valeur1 = MakeSUB($argument1)->($context);
+	my $valeur1 = shift;
 	return $valeur1 if(EstUneERREUR($valeur1));
-	my $argument2 = $nextArgument->();
-	my $valeur2 = MakeSUB($argument2)->($context);
-	return $valeur2 if(EstUneERREUR($valeur1));
+	my $valeur2 = shift;
+	return $valeur2 if(EstUneERREUR($valeur2));
 	return MakeAST_NUMERIC($valeur1->[1] % $valeur2->[1]);
 }
-sub HACK_POW{
+
+sub internal_POW{
 	my $context = shift;
-	my $arguments = shift;
-	my $nextArgument = MakeIterator_LIST($arguments);
-	my $argument1 = $nextArgument->();
-	my $valeur1 = MakeSUB($argument1)->($context);
+	my $valeur1 = shift;
 	return $valeur1 if(EstUneERREUR($valeur1));
-	my $argument2 = $nextArgument->();
-	my $valeur2 = MakeSUB($argument2)->($context);
+	my $valeur2 = shift;
 	return $valeur2 if(EstUneERREUR($valeur1));
 	return MakeAST_NUMERIC(($valeur1->[1]) ** $valeur2->[1]);
 }
-sub HACK_SQRT{
+
+sub internal_SQRT{
 	my $context = shift;
-	my $arguments = shift;
-	my $nextArgument = MakeIterator_LIST($arguments);
-	my $argument1 = $nextArgument->();
-	my $valeur1 = MakeSUB($argument1)->($context);
+	my $valeur1 = shift;
 	return $valeur1 if(EstUneERREUR($valeur1));
 	return MakeAST_NUMERIC(sqrt($valeur1->[1]));
 }
-sub HACK_PRINT{
+
+sub internal_PRINT{
 	my $context = shift;
-	my $arguments= shift;
-	my $nextArgument = MakeIterator_LIST($arguments);
-	my $currentArgument = $nextArgument->();
-	my $valeur = MakeSUB($currentArgument)->($context);
+	my $valeur = shift;
 	return MakeAST_ERROR("N'est pas printable !") if(!(EstSTRING($valeur) || EstNUMERIC($valeur)));
 	if($GLOBAL_MODE eq 'LIGNE'){
 		print $valeur->[1] ;
@@ -1800,33 +1805,27 @@ sub HACK_PRINT{
 	}
 	return ['VOID'];
 }
-sub HACK_PAUSE{
+
+sub internal_PAUSE{
 	my $context = shift;
-	my $arguments= shift;
-	my $nextArgument = MakeIterator_LIST($arguments);
-	my $currentArgument = $nextArgument->();
-	my $valeur = MakeSUB($currentArgument)->($context);
+	my $valeur = shift;
 	return MakeAST_ERROR("N'est pas numerique !") if(!EstNUMERIC($valeur));
 	Time::HiRes::sleep($valeur->[1]);
 	return ['VOID'];
 }
-sub HACK_EXECUTE{
+
+sub internal_EXECUTE{
 	my $context = shift;
-	my $arguments= shift;
-	my $nextArgument = MakeIterator_LIST($arguments);
-	my $currentArgument = $nextArgument->();
-	my $valeur = MakeSUB($currentArgument)->($context);
+	my $valeur = shift;
 	return MakeAST_ERROR("N'est pas executable !") if(!EstSTRING($valeur));
 	my $executable=$valeur->[1];
 	my $retour=`$executable`;
 	return MakeAST_STRING($retour);
 }
-sub HACK_PEEK{
+
+sub internal_PEEK{
 	my $context = shift;
-	my $arguments= shift;
-	my $nextArgument = MakeIterator_LIST($arguments);
-	my $currentArgument = $nextArgument->();
-	my $valeur = MakeSUB($currentArgument)->($context);
+	my $valeur = shift;
 	return MakeAST_ERROR("N'est pas numerique !") if(!EstNUMERIC($valeur));
 	my $adresse=$valeur->[1];
 	my $executable = "dir ";
@@ -1835,15 +1834,12 @@ sub HACK_PEEK{
 	return MakeFAUX()  if($retour == 0);
 	return MakeAST_ERROR("Valeur non booleenne !");
 }
-sub HACK_POKE{
+
+sub internal_POKE{
 	my $context = shift;
-	my $arguments= shift;
-	my $nextArgument = MakeIterator_LIST($arguments);
-	my $currentArgument = $nextArgument->();
-	my $adresse = MakeSUB($currentArgument)->($context);
+	my $adresse = shift;
 	return MakeAST_ERROR("Adresse n'est pas numerique !") if(!EstNUMERIC($adresse));
-	$currentArgument = $nextArgument->();
-	my $bit = MakeSUB($currentArgument)->($context);
+	my $bit = shift;
 	return MakeAST_ERROR("Bit n'est pas digital !") if(!EstBOOLEAN($bit));
 	my $executable='gpio -1 write';
 	my $addr = $adresse->[1];
@@ -1857,6 +1853,7 @@ sub HACK_POKE{
 	my $retour=`$executable $addr $binaryDigit`;
 	return MakeAST_STRING($retour);
 }
+
 sub gpioModeWrite{
 	my $gpioPIN = shift;
 	#Verifions si le
@@ -1935,27 +1932,7 @@ sub MakeSUB_BRACKET{
 
 		if(EstID($funcExpr)){
 			$funcName = $AST->[1]->[1];
-			return HACK_ROUND   ($context, $arguments) if($funcName  eq 'round');
-			return HACK_ARRONDIS($context, $arguments) if($funcName  eq 'entier');
-			return HACK_HASARD  ($context, $arguments) if($funcName  eq 'hasard');
-			return HACK_LENGTH  ($context, $arguments) if(($funcName eq 'length')||($funcName eq 'longueur'));
-			return HACK_PRINT   ($context, $arguments) if(($funcName eq 'print') ||($funcName eq 'ecris'));
-			return HACK_RESTE   ($context, $arguments) if($funcName  eq 'reste');
-			return HACK_POW     ($context, $arguments) if($funcName  eq 'pow');
-			return HACK_SQRT    ($context, $arguments) if($funcName  eq 'sqrt');
-			return HACK_PAUSE   ($context, $arguments) if($funcName  eq 'pause');
-			return HACK_EXECUTE ($context, $arguments) if($funcName  eq 'execute');
-return HACK_PEEK($context, $arguments) if($funcName  eq 'peek');
-return HACK_POKE($context, $arguments) if($funcName  eq 'poke');
 
-			return HACK_MODE($context, $arguments) if($funcName  eq 'mode');
-			return HACK_TEST($context, $arguments) if($funcName  eq 'test');
-			return HACK_POS($context, $arguments) if($funcName  eq 'pos');
-			return HACK_RAFRAICHIS($context, $arguments) if($funcName  eq 'rafraichis');
-return HACK_EFFACE($context, $arguments) if($funcName  eq 'efface');
-return HACK_GETMAXX($context, $arguments) if($funcName  eq 'max_X');
-return HACK_GETMAXY($context, $arguments) if($funcName  eq 'max_Y');
-			return tkUse ($context, $arguments) if($funcName eq 'tk' );
 			$lambda = Context_get($context,$funcName);
 			return MakeAST_ERROR("FONCTION $funcName NON DEFINIE") if(!defined $lambda);
 
@@ -1963,6 +1940,7 @@ return HACK_GETMAXY($context, $arguments) if($funcName  eq 'max_Y');
 			return bracketOnString($context,$lambda, $arguments) if(EstSTRING($lambda));
 			return bracketOnTablo($context,$lambda, $arguments) if(EstTABLO($lambda));
 			return bracketOnNumeric($context,$lambda, $arguments) if(EstNUMERIC($lambda));
+			return Call_Internal($context,$lambda, $arguments) if(EstINTERNALFUNC($lambda));
 
 			if(!EstLAMBDA($lambda)){
 				#A surveiller !!!!
@@ -1972,6 +1950,7 @@ return HACK_GETMAXY($context, $arguments) if($funcName  eq 'max_Y');
 				return bracketOnString($context,$lambda, $arguments) if(EstSTRING($lambda));
 				return bracketOnTablo($context,$lambda, $arguments) if(EstTABLO($lambda));
 				return bracketOnNumeric($context,$lambda, $arguments) if(EstNUMERIC($lambda));
+				return Call_Internal($context,$lambda, $arguments) if(EstINTERNALFUNC($lambda));
 				if(!EstLAMBDA($lambda)){
 					my $err = Dumper($lambda);
 					return MakeAST_ERROR("$funcName n'est pas une fonction: $err");
@@ -1983,6 +1962,7 @@ return HACK_GETMAXY($context, $arguments) if($funcName  eq 'max_Y');
 			return bracketOnString($context,$lambda, $arguments) if(EstSTRING($lambda));
 			return bracketOnTablo($context,$lambda, $arguments) if(EstTABLO($lambda));
 			return bracketOnNumeric($context,$lambda, $arguments) if(EstNUMERIC($lambda));
+			return Call_Internal($context,$lambda, $arguments) if(EstINTERNALFUNC($lambda));
 			if(!EstLAMBDA($lambda)){
 					#Cas du deflambda !
 					$lambda = MakeSUB($lambda)->($context);
@@ -2127,19 +2107,38 @@ sub MakeSUB_POURCHAQUE{
 		return $result;
 	}
 }
-#######################################################
-sub tkUse{
-#	my $context = shift;
-#	my $arguments = shift;
-#	my $mw = MainWindow->new;
-#    $mw->Label(-text => 'Hello, world!')->pack;
-#	my $canvas = $mw->new_tk__canvas();
-#    $mw->Button(
-#        -text    => 'Quit',
-#        -command => sub { $mw->destroy()},
-#    )->pack;
-#    MainLoop;
-	return ['VOID'];
+
+sub addInternalFunc{
+	my $context= shift;
+	my @funcTable = @_;
+	foreach my $f (@funcTable){
+		# funcName: f->[0]; funcBody: f->[1]
+		Context_set($context, $f->[0], $f->[1]);
+	}
+}
+
+sub installInternalFunc{
+	my $context = shift;
+	addInternalFunc($context,
+		['round', MakeAST_INTERNALFUNC(\&internal_ROUND)],
+		['entier', MakeAST_INTERNALFUNC(\&internal_ARRONDIS)],
+		['hasard', MakeAST_INTERNALFUNC(\&internal_HASARD  )],
+		['longueur', MakeAST_INTERNALFUNC(\&internal_LENGTH)],
+		['ecris', MakeAST_INTERNALFUNC(\&internal_PRINT)],
+		['reste', MakeAST_INTERNALFUNC(\&internal_RESTE)],
+		['pow', MakeAST_INTERNALFUNC(\&internal_POW)],
+		['sqrt', MakeAST_INTERNALFUNC(\&internal_SQRT)],
+		['pause', MakeAST_INTERNALFUNC(\&internal_PAUSE)],
+		['execute', MakeAST_INTERNALFUNC(\&internal_EXECUTE)],
+		['peek', MakeAST_INTERNALFUNC(\&internal_PEEK)],
+		['poke', MakeAST_INTERNALFUNC(\&internal_POKE)],
+		['mode', MakeAST_INTERNALFUNC(\&internal_MODE)],
+		['pos' , MakeAST_INTERNALFUNC(\&internal_POS)],
+		['rafraichis', MakeAST_INTERNALFUNC(\&internal_RAFRAICHIS)],
+		['efface' , MakeAST_INTERNALFUNC(\&internal_EFFACE)],
+		['max_X' , MakeAST_INTERNALFUNC(\&internal_MAXX)],
+		['max_Y' , MakeAST_INTERNALFUNC(\&internal_MAXY)],
+	);
 }
 
 
@@ -2215,6 +2214,9 @@ $attribs->{completion_function} = sub{
 	return listBASFiles() if($line =~ /load\s+$text$/);
 	return qw(load pour chaque si sinon fin ciao exit affiche suivant jusqu'a);
 };
+
+# Installation des fonctions internes:
+installInternalFunc($context);
 
 sub listBASFiles{
 	my @files = <*.bas>;

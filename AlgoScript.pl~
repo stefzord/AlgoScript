@@ -193,8 +193,8 @@ my $grammarNum = <<'_EOGRAMMARNUM_';
 	
 	FAUX : "faux"
 			{['BOOLEAN','FAUX']}
-	VRAIS : "vrais"
-			{['BOOLEAN','VRAIS']}
+	VRAI : "vrai"
+			{['BOOLEAN','VRAI']}
 
 	RIEN : "rien"
 			{['VOID']}
@@ -205,7 +205,7 @@ my $grammarNum = <<'_EOGRAMMARNUM_';
 			{['INPUT']}
 
 	VALEUR :  FAUX
-		| VRAIS
+		| VRAI
 		|  RIEN
 		| INPUT
 		| NUMERIC
@@ -405,9 +405,9 @@ sub Context_set{
 
 	# Renvois une fonction renvoyant
 	# Vrais quelque soient ses arguments
-	sub MakeVRAIS{
+	sub MakeVRAI{
 		return sub{
-			return MakeAST_VRAIS();
+			return MakeAST_VRAI();
 		}
 	}
 
@@ -433,8 +433,8 @@ sub MakeNOT{
 		return undef if(!defined $valeur);
 		#return 0 if($valeur);
 		return $valeur if(EstUneERREUR($valeur));
-		return MakeAST_FAUX() if(EstVRAIS($valeur));
-		return MakeAST_VRAIS()if(EstFAUX ($valeur));
+		return MakeAST_FAUX() if(EstVRAI($valeur));
+		return MakeAST_VRAI() if(EstFAUX ($valeur));
 		return MakeAST_ERROR("N'EST PAS UN BOOLEAN", $valeur);
 	}
 }
@@ -453,7 +453,7 @@ sub MakeAND{
 			return MakeAST_FAUX() if(EstFAUX($valeur));
 		}
 		# Aucune valeur n'est fausse!
-		return MakeAST_VRAIS();
+		return MakeAST_VRAI();
 	}
 }
 sub MakeOR{
@@ -468,7 +468,7 @@ sub MakeOR{
 			my $valeur = $porte->($values);
 			return undef if(!defined $valeur);
 			return $valeur if(EstUneERREUR($valeur));
-			return MakeAST_VRAIS() if(EstVRAIS($valeur));
+			return MakeAST_VRAI() if(EstVRAI($valeur));
 		}
 		# Aucune valeur n'est vrai !
 		return MakeAST_FAUX();
@@ -526,12 +526,12 @@ sub MakeAST_NOT{
 	return ['NOT', $val];
 }
 
-sub MakeAST_VRAIS{
-	return ['BOOLEAN','VRAIS'];
+sub MakeAST_VRAI{
+	return ['BOOLEAN','VRAI'];
 }
-sub EstVRAIS{
+sub EstVRAI{
 	my $value = shift;
-	return 1 if($value->[0] eq 'BOOLEAN' && $value->[1] eq 'VRAIS');
+	return 1 if($value->[0] eq 'BOOLEAN' && $value->[1] eq 'VRAI');
 	return 0;
 }
 
@@ -698,6 +698,20 @@ sub MakeAST_DIV{
 	my ($lvalue, $rvalue)=@_;
 	return ['DIV', $lvalue, $rvalue];
 }
+sub MakeAST_INTERNALFUNC{
+	my $func = shift;
+	return ['INTERNALFUNC', $func];
+}
+sub getINTERNALFUNC{
+	my $func = shift;
+	return $func->[1] if($func->[0] eq 'INTERNALFUNC');
+	return MakeAST_ERROR("N'est pas une fonction interne " . $func->[0]);
+}
+sub EstINTERNALFUNC{
+	my $valeur = shift;
+	return 1 if($valeur->[0] eq 'INTERNALFUNC');
+	return 0;
+}
 #On enleve les elements NOTHING
 #des AST
 sub RemoveNOTHING{
@@ -754,7 +768,7 @@ sub MakeSUB{
 	return MakeSUB_MULT  ($AST) if($AST->[0] eq 'MULT'  );
 	return MakeSUB_DIV   ($AST) if($AST->[0] eq 'DIV'  );
 	return MakeSUB_CONCATENE($AST) if($AST->[0] eq 'CONCATENE');
-	return MakeSUB_VRAIS ($AST) if($AST->[0] eq 'BOOLEAN' && $AST->[1] eq 'VRAIS');
+	return MakeSUB_VRAI  ($AST) if($AST->[0] eq 'BOOLEAN' && $AST->[1] eq 'VRAI');
 	return MakeSUB_FAUX  ($AST) if($AST->[0] eq 'BOOLEAN' && $AST->[1] eq 'FAUX' );
 	return MakeSUB_VOID  ($AST) if($AST->[0] eq 'VOID'  );#En TEST !
 	return MakeSUB_NOTHING($AST) if($AST->[0] eq 'NOTHING');
@@ -776,6 +790,7 @@ sub MakeSUB{
 	return MakeSUB_FUNCASSIGN($AST) if($AST->[0] eq 'FUNCASSIGN');
 	#return MakeSUB_FUNC($AST) if($AST->[0] eq 'FUNC');
 	return MakeSUB_LAMBDA($AST) if($AST->[0] eq 'LAMBDA');
+	return MakeSUB_INTERNALFUNC($AST) if($AST->[0] eq 'INTERNALFUNC');
 	return MakeSUB_DEFLAMBDA($AST) if($AST->[0] eq 'DEFLAMBDA');
 	return MakeSUB_DEFRANGE ($AST) if($AST->[0] eq 'DEFRANGE');
 	return MakeSUB_DEFTABLO($AST) if($AST->[0] eq 'DEFTABLO');
@@ -856,10 +871,10 @@ sub MakeSUB_NOT{
 	return MakeNOT(MakeSUB($AST_Val));
 }
 
-sub MakeSUB_VRAIS{
+sub MakeSUB_VRAI{
 	my $AST = shift;
 	return sub{
-		MakeAST_VRAIS();
+		MakeAST_VRAI();
 	}
 }
 
@@ -888,6 +903,13 @@ sub MakeSUB_NUMERIC{
 	my $AST = shift;
 	return sub{
 		MakeAST_NUMERIC($AST->[1]);
+	}
+}
+
+sub MakeSUB_INTERNALFUNC{
+	my $AST = shift;
+	return sub{
+		return $AST;
 	}
 }
 
@@ -932,7 +954,7 @@ sub MakeSUB_ADD{
 			#my $valeur = $porte->($values);
 			return undef if(!defined $valeur);
 			return $valeur if(EstUneERREUR($valeur));
-			return MakeAST_VRAIS() if(EstVRAIS($valeur));
+			return MakeAST_VRAI() if(EstVRAI($valeur));
 		}
 		# Aucune valeur n'est vrai !
 		return MakeAST_FAUX();
@@ -953,51 +975,7 @@ sub MakeSUB_ADD{
 		my $rvalue  = shift;
 		return MakeAST_NUMERIC($lvalue->[1] + $rvalue->[1]);
 	};
-#	my $string = sub{
-#		my $context = shift;
-#		my $lvalue  = shift;
-#		my $rvalue  = shift;
-#		return $lvalue if(EstVOID($rvalue));
-#		return $rvalue if(EstVOID($lvalue));
-#		return MakeAST_STRING($lvalue->[1] . $rvalue->[1]);
-#	};
-#	my $tablo = sub{
-#		my $context = shift;
-#		my $lvalue  = shift;
-#		my $rvalue  = shift;
-#		my $ltab = $lvalue->[2];
-#		my $rtab = $rvalue->[2];
-#		my $longL = scalar(@$ltab);
-#		my $longR = scalar(@$rtab);
-#		my $minTab;
-#		my $maxTab;
-#		my $lmin;
-#		my $lmax;
-#		if($longL >= $longR){
-#			$minTab = $rtab;
-#			$maxTab = $ltab;
-#			$lmin = $longR;
-#			$lmax = $longL;
-#		}else{
-#			$minTab = $ltab;
-#			$maxTab = $rtab;
-#			$lmin = $longL;
-#			$lmax = $longR;
-#		}
-#		my @newTab = ();
-#		my $newAST;
-#		my $ASTValue;
-#		for (my $i=0; $i< $lmax; $i++){
-#			if($i<$lmin){
-#				$newAST = ['ADD', $ltab->[$i], $rtab->[$i]];
-#				$ASTValue = MakeSUB($newAST)->($context);
-#			}else{
-#				$ASTValue = $maxTab->[$i];
-#			}
-#			push(@newTab, $ASTValue);
-#		}
-#		return MakeAST_TABLO(\@newTab);
-#	};
+
 	return sub{
 		my $context = shift;
 		my $lvalue = $sub_l->($context);
@@ -1118,17 +1096,14 @@ sub MakeSUB_CONCATENE{
 		my $context = shift;
 		my $lvalue  = shift;
 		my $rvalue  = shift;
-		#return ['LAMBDA',$parameters,$code,$context];
 		# Pour l'instant on utilise que 1 parametre
 		my $parameters = ['LIST_IDENTIFIERS',['ID','x'],['NULL']];
 		my $localContext = Context_New();
-		#my $code = ['LIST_INSTRUCTIONS',['ADD',$lvalue,$r],['NULL']];
 	};
 	my $numerique = sub{
 		my $context = shift;
 		my $lvalue  = shift;
 		my $rvalue  = shift;
-		#return MakeAST_NUMERIC($lvalue->[1] + $rvalue->[1]);
 		return MakeAST_STRING($lvalue->[1] . $rvalue->[1]);
 	};
 	
@@ -1164,7 +1139,7 @@ sub MakeSUB_SUBS{
 			#my $valeur = $porte->($values);
 			return undef if(!defined $valeur);
 			return $valeur if(EstUneERREUR($valeur));
-			return MakeAST_VRAIS() if(EstVRAIS($valeur));
+			return MakeAST_VRAI() if(EstVRAI($valeur));
 		}
 		# Aucune valeur n'est vrai !
 		return MakeAST_FAUX();
@@ -1226,7 +1201,7 @@ sub MakeSUB_MULT{
 			#my $valeur = $porte->($values);
 			return undef if(!defined $valeur);
 			return $valeur if(EstUneERREUR($valeur));
-			return MakeAST_VRAIS() if(EstVRAIS($valeur));
+			return MakeAST_VRAI() if(EstVRAI($valeur));
 		}
 		# Aucune valeur n'est vrai !
 		return MakeAST_FAUX();
@@ -1293,17 +1268,15 @@ sub MakeSUB_DIV{
 	my $AST_R = $AST->[2];
 	my $sub_l = MakeSUB($AST_L);
 	my $sub_r = MakeSUB($AST_R);
-	#return MakeADD($sub_l, $sub_r);
 	my @portes = ($sub_l, $sub_r);
 	my $logique = sub{
 		my $context = shift;
 		my $lvalue  = shift;
 		my $rvalue  = shift;
 		foreach my $valeur ($lvalue, $rvalue){
-			#my $valeur = $porte->($values);
 			return undef if(!defined $valeur);
 			return $valeur if(EstUneERREUR($valeur));
-			return MakeAST_VRAIS() if(EstVRAIS($valeur));
+			return MakeAST_VRAI() if(EstVRAI($valeur));
 		}
 		# Aucune valeur n'est vrai !
 		return MakeAST_FAUX();
@@ -1360,7 +1333,6 @@ sub MakeSUB_AFFECT{
 		my $var_name = $AST_ID->[1];
 		my $retour = MakeSUB($AST_VALUE)->($context);
 		return $retour if(EstUneERREUR($retour));
-		#$context->{$var_name} = $retour;
 		Context_set($context, $var_name, $retour);
 		return ['VOID'];
 	}
@@ -1424,31 +1396,40 @@ sub affiche_TABLO{
 	my $context = shift;
 	my $tablo   = shift;
 
+	print tab2String($context, $tablo);
+	return;
+}
+sub tab2String{
+	my $context = shift;
+	my $tablo   = shift;
+
 	my $tab     = $tablo->[2];
-	my $longueur = scalar(@$tab);
+	my $longueur= scalar(@$tab);
+	my $accu    = "[";
 	
-	print "[";
-		#foreach my $element (@$tab){
-		for(my $i=0; $i<$longueur; $i++){
-			#my $valeur = MakeSUB($element)->($context);
-			my $valeur = MakeSUB($tab->[$i])->($context);
-			if(scalar(@$valeur) == 1){
-				if(EstVOID($valeur)){
-					print "\n";
-				}else{
-					print $valeur->[0];
-				}
+	for(my $i=0; $i<$longueur; $i++){
+		my $valeur = MakeSUB($tab->[$i])->($context);
+		if(scalar(@$valeur) == 1){
+			if(EstVOID($valeur)){
+				$accu .= "[]";
 			}else{
-				if(EstTABLO($valeur)){
-					affiche_TABLO($context, $valeur);
+				$accu .= $valeur->[0];
+			}
+		}else{
+			if(EstTABLO($valeur)){
+				$accu .= tab2String($context, $valeur);
+			}else{
+				if(EstSTRING($valeur)){
+					# On ajoute les " pour du texte
+					$accu .= '"' . $valeur->[1] . '"';
 				}else{
-					print $valeur->[1];
+					$accu .= $valeur->[1];
 				}
-			}		
-			print "," if($i<$longueur-1);
+			}
 		}
-	print "]";
-	#return ['VOID'];
+		$accu .= "," if($i<$longueur-1);
+	}
+	return $accu . "]";
 }
 sub MakeSUB_STRICTSUP{
 	my $AST = shift;
@@ -1462,7 +1443,7 @@ sub MakeSUB_STRICTSUP{
 		return $rhs if(EstUneERREUR($rhs));
 		return $lhs if(EstNOTHING($rhs));
 		#ATTENTION il faut verifier que les types soient valables !
-		return MakeAST_VRAIS() if($lhs->[1] > $rhs->[1]);
+		return MakeAST_VRAI() if($lhs->[1] > $rhs->[1]);
 		return MakeAST_FAUX;
 	}
 }
@@ -1478,9 +1459,9 @@ sub MakeSUB_EQUALITE{
 		return $rhs if(EstUneERREUR($rhs));
 		return $lhs if(EstNOTHING($rhs));
 		#ATTENTION il faut verifier que les types soient valables !
-		return MakeAST_VRAIS() if(EstVOID($lhs) && EstVOID($rhs));
+		return MakeAST_VRAI() if(EstVOID($lhs) && EstVOID($rhs));
 		return MakeAST_FAUX if(EstVOID($lhs) || EstVOID($rhs));
-		return MakeAST_VRAIS() if($lhs->[1] eq $rhs->[1]);
+		return MakeAST_VRAI() if($lhs->[1] eq $rhs->[1]);
 		return MakeAST_FAUX;
 	}
 }
@@ -1493,7 +1474,7 @@ sub MakeSUB_CONDITION{
 		my $sinon     = $AST->[3];
 		my $si = MakeSUB($condition)->($context);
 		return $si if(EstUneERREUR($si));
-		if(EstVRAIS($si)){
+		if(EstVRAI($si)){
 			return MakeSUB($alors)->($context);
 		}else{
 			unless(EstNULL($sinon)){
@@ -1514,7 +1495,7 @@ sub MakeSUB_TANTQUE{
 		while(1){
 			my $validite = MakeSUB($condition)->($context);
 			return $validite if(EstUneERREUR($validite));
-			if(EstVRAIS($validite)){
+			if(EstVRAI($validite)){
 				$resultat = MakeSUB($instructions)->($context);
 			}else{
 				return $resultat;
@@ -1571,10 +1552,6 @@ sub MakeSUB_FUNCASSIGN{
 	my $parameters = $defunc->[2];
 	return sub{
 		my $context = shift;
-		#my $newcontext = Context_New();
-		#LIST_ACTION($parameters, sub{Context_set($newcontext, $_[0]->[1],['NULL'])});
-		#Context_setParent($newcontext, $context);
-		#Context_set($context, $funcName, ['LAMBDA',$parameters,$code,$newcontext]);
 		Context_set($context, $funcName, ['LAMBDA',$parameters,$code,$context]);
 		return ['VOID'];
 	}
@@ -1585,14 +1562,10 @@ sub MakeSUB_DEFLAMBDA{
 	my $code   = $AST->[2];
 	return sub{
 		my $context = shift;
-		#my $newcontext = Context_New();
-		#LIST_ACTION($parameters, sub{Context_set($newcontext, $_[0]->[1],['NULL'])});
-		#Context_setParent($newcontext, $context);
-		#return ['LAMBDA',$parameters,$code,$newcontext];
 		return ['LAMBDA',$parameters,$code,$context];
 	}
 }
-#Pour l'instant transforme un defrange en tableau<
+#Pour l'instant transforme un defrange en tableau
 #uterieurement il faudra utiliser des listes en
 #lazy evaluation afin d'avoir des ranges infinis
 sub MakeSUB_DEFRANGE{
@@ -1611,12 +1584,10 @@ sub MakeSUB_DEFRANGE{
 		my $debut = $val1->[1];
 		my $fin   = $val2->[1];
 		if($debut <= $fin){
-			#($debut,$fin) = ($val1->[1],$val2->[1]);
 			for(my $i=$debut;$i<= $fin;$i++){
 				push(@$tab, MakeAST_NUMERIC($i));
 			}
 		}else{
-			#($debut,$fin) = ($val2->[1],$val1->[1]);
 			for(my $i=$debut;$i>= $fin;$i--){
 				push(@$tab, MakeAST_NUMERIC($i));
 			}
@@ -1638,12 +1609,10 @@ sub MakeSUB_DEFTABLO{
 			
 			# On calcul les arguments comme des gloutons
 			my $valeur = MakeSUB($currentArgument)->($context);
-			#print "DEBUG: pour DEFTABLO, " . Dumper($valeur) . "\n" if(defined Context_get($context,'TRON') && EstVRAIS(Context_get($context,'TRON')));
 			return $valeur if(EstUneERREUR($valeur));
 			push(@$tab, $valeur);
 		}
 		# Rappel la taille de @$tab est scalar(@$tab) !!!
-		#return ['TABLO', sub{my $action= shift;return $tab->[$action->[1]]}, $tab ];
 		return MakeAST_TABLO($tab);
 	}
 }
@@ -1656,30 +1625,8 @@ sub MakeSUB_TABLO{
 		return $AST;
 	}
 }
-sub HACK_TEST{
-	my $context = shift;
-	my $arguments= shift;
-	my $nextArgument = MakeIterator_LIST($arguments);
-	my $currentArgument = $nextArgument->();
-	my $valeur = MakeSUB($currentArgument)->($context);
 
-	my $max_x;
-	my $max_y;
-	getmaxyx($max_y, $max_x);
-	my $x = 10;
-	my $y = 10;
-	clear();
-	foreach my $i (1..5){
-		move($y, $x);
-		printw("o");
-		refresh();
-		sleep(1);
-		$x++;
-		$y++;
-	}
-	return ['VOID'];
-}
-sub HACK_EFFACE{
+sub internal_EFFACE{
 	if($GLOBAL_MODE eq 'ECRAN'){
 		clear();
 		refresh();
@@ -1693,70 +1640,100 @@ sub HACK_EFFACE{
 	}
 	return ['VOID'];
 }
-sub HACK_GETMAXX{
+
+sub internal_GETMAXX{
 	return MakeAST_NUMERIC(getmaxx());
 }
-sub HACK_GETMAXY{
+
+sub internal_GETMAXY{
 	return MakeAST_NUMERIC(getmaxy());
 }
-sub HACK_POS{
+
+sub internal_POS{
 	my $context = shift;
-	my $arguments= shift;
-	my $nextArgument = MakeIterator_LIST($arguments);
-	my $currentArgument = $nextArgument->();
-	my $valeur = MakeSUB($currentArgument)->($context);
+	my $valeur = shift;
+	my $valeur2= shift;
 	return MakeAST_ERROR("Le premier parametre de la fonction 'pos' n'est pas numerique !") if(!EstNUMERIC($valeur));
+	return MakeAST_ERROR("Le second parametre de la fonction 'pos' n'est pas numerique !") if(!EstNUMERIC($valeur2));
 	my $x = $valeur->[1];
-	$currentArgument = $nextArgument->();
-	$valeur = MakeSUB($currentArgument)->($context);
-	return MakeAST_ERROR("Le second parametre de la fonction 'pos' n'est pas numerique !") if(!EstNUMERIC($valeur));
-	my $y = $valeur->[1];
+	my $y = $valeur2->[1];
 	move($y,$x);
 	return ['VOID'];
 }
-sub HACK_RAFRAICHIS{
+
+sub internal_RAFRAICHIS{
 	refresh();
 	return ['VOID'];
 }
-sub HACK_MODE{
+
+sub internal_MODE{
 	my $context = shift;
-	my $arguments= shift;
-	my $nextArgument = MakeIterator_LIST($arguments);
-	my $currentArgument = $nextArgument->();
-	my $valeur = MakeSUB($currentArgument)->($context);
+	my $valeur = shift;
 	return MakeAST_ERROR("N'est pas du texte, pour fonction 'mode'!") if(!EstSTRING($valeur));
 	my $texte = $valeur->[1];
 	if($texte eq 'LIGNE'){
-		do_mode_LIGNE();
+#		do_mode_LIGNE();
 		return ['VOID'];
 	}
 	if($texte eq 'ECRAN'){
-		do_mode_ECRAN();
+#		do_mode_ECRAN();
 		return ['VOID'];
 	}
 	if($texte eq 'TAMPON'){
 		do_mode_TAMPON();
-		return ['VOID'];
+#		return ['VOID'];
 	}
 	return MakeAST_ERROR("Mode $texte inconnu !");
 }
+
 sub do_mode_LIGNE{
 	$GLOBAL_MODE='LIGNE';
-	echo();
-	nocbreak();
-	curs_set(1);
-	endwin;
+#	echo();
+#	nocbreak();
+#	curs_set(1);
+#	endwin;
 }
 sub do_mode_ECRAN{
 	$GLOBAL_MODE='ECRAN';
-	initscr;
-	noecho();
-	cbreak();
-	curs_set(0);
+#	initscr;
+#	noecho();
+#	cbreak();
+#	curs_set(0);
 }
 sub do_mode_TAMPON{
-	do_mode_ECRAN();
+#	do_mode_ECRAN();
 	$GLOBAL_MODE='TAMPON';
+}
+
+# Appel une fonction interne,
+# une fonction en perl
+sub Call_Internal{
+	my $context = shift;
+	my $internalFunction = shift;
+	my $arguments = shift;
+	my @parameters = ();
+	my $nextArgument = MakeIterator_LIST($arguments);
+	my $hasElement = 1;
+	while($hasElement){
+		my $element = $nextArgument->();
+		if(!EstNULL($element)){
+			# ATTENTION:
+			# parametres gloutons pour l'instant
+			my $val = MakeSUB($element)->($context);
+			return $val if(EstUneERREUR($val));
+			push(@parameters, $val);
+		}else{
+			$hasElement = 0;
+		}
+	}
+	my $iFunc = getINTERNALFUNC($internalFunction);
+	$iFunc->($context,@parameters);
+}
+sub internal_ROUND{
+	my $context = shift;
+	my $valeur  = shift;
+	return MakeAST_ERROR("N'est pas numerique, pour arrondi !". $valeur->[1]) if(!EstNUMERIC($valeur));
+	return MakeAST_NUMERIC(sprintf("%.4f", $valeur->[1]));
 }
 sub HACK_ROUND{
 	my $context = shift;
@@ -1767,6 +1744,12 @@ sub HACK_ROUND{
 	return MakeAST_ERROR("N'est pas numerique, pour arrondi !") if(!EstNUMERIC($valeur));
 	return MakeAST_NUMERIC(sprintf("%.4f", $valeur->[1]));
 }
+sub internal_ARRONDIS{
+	my $context = shift;
+	my $valeur  = shift;
+	return MakeAST_ERROR("N'est pas numerique, pour arrondi !") if(!EstNUMERIC($valeur));
+	return MakeAST_NUMERIC(sprintf("%.0f", $valeur->[1]));
+}
 sub HACK_ARRONDIS{
 	my $context = shift;
 	my $arguments= shift;
@@ -1776,6 +1759,12 @@ sub HACK_ARRONDIS{
 	return MakeAST_ERROR("N'est pas numerique, pour arrondi !") if(!EstNUMERIC($valeur));
 	return MakeAST_NUMERIC(sprintf("%.0f", $valeur->[1]));
 }
+sub internal_HASARD{ 
+	my $context = shift;
+	my $valeur = shift;
+	return MakeAST_ERROR("N'est pas numerique, pour hasard !") if(!EstNUMERIC($valeur));
+	return MakeAST_NUMERIC(rand($valeur->[1]));
+}
 sub HACK_HASARD{
 	my $context = shift;
 	my $arguments= shift;
@@ -1784,6 +1773,23 @@ sub HACK_HASARD{
 	my $valeur = MakeSUB($currentArgument)->($context);
 	return MakeAST_ERROR("N'est pas numerique, pour hasard !") if(!EstNUMERIC($valeur));
 	return MakeAST_NUMERIC(rand($valeur->[1]));
+}
+sub internal_LENGTH{
+	my $context = shift;
+	my $valeur = shift; 
+	#La longueur d'un tablo est scalar(@tablo)
+	if(EstTABLO($valeur)){
+		my $tab= $valeur->[2];
+		my $long = scalar(@$tab);
+		return MakeAST_NUMERIC($long);
+	}
+	if(EstVOID($valeur)){
+		return MakeAST_NUMERIC(0);
+	}
+	return MakeAST_ERROR("N'est pas du texte !".$valeur->[0]." ".$valeur->[1]) if(!(EstSTRING($valeur) || EstNUMERIC($valeur)));
+	my $val = $valeur->[1];
+	$val = "$val" if(EstNUMERIC($valeur));
+	return MakeAST_NUMERIC(length($val));
 }
 sub HACK_LENGTH{
 	my $context = shift;
@@ -1803,8 +1809,15 @@ sub HACK_LENGTH{
 	return MakeAST_ERROR("N'est pas du texte !".$valeur->[0]." ".$valeur->[1]) if(!(EstSTRING($valeur) || EstNUMERIC($valeur)));
 	my $val = $valeur->[1];
 	$val = "$val" if(EstNUMERIC($valeur));
-	#return MakeAST_NUMERIC(length($valeur->[1]));
 	return MakeAST_NUMERIC(length($val));
+}
+sub internal_RESTE{
+	my $context = shift;
+	my $valeur1 = shift;
+	return $valeur1 if(EstUneERREUR($valeur1));
+	my $valeur2 = shift;
+	return $valeur2 if(EstUneERREUR($valeur2));
+	return MakeAST_NUMERIC($valeur1->[1] % $valeur2->[1]);
 }
 sub HACK_RESTE{
 	my $context = shift;
@@ -1818,6 +1831,14 @@ sub HACK_RESTE{
 	return $valeur2 if(EstUneERREUR($valeur1));
 	return MakeAST_NUMERIC($valeur1->[1] % $valeur2->[1]);
 }
+sub internal_POW{
+	my $context = shift;
+	my $valeur1 = shift;
+	return $valeur1 if(EstUneERREUR($valeur1));
+	my $valeur2 = shift;
+	return $valeur2 if(EstUneERREUR($valeur1));
+	return MakeAST_NUMERIC(($valeur1->[1]) ** $valeur2->[1]);
+}
 sub HACK_POW{
 	my $context = shift;
 	my $arguments = shift;
@@ -1830,6 +1851,12 @@ sub HACK_POW{
 	return $valeur2 if(EstUneERREUR($valeur1));
 	return MakeAST_NUMERIC(($valeur1->[1]) ** $valeur2->[1]);
 }
+sub internal_SQRT{
+	my $context = shift;
+	my $valeur1 = shift;
+	return $valeur1 if(EstUneERREUR($valeur1));
+	return MakeAST_NUMERIC(sqrt($valeur1->[1]));
+}
 sub HACK_SQRT{
 	my $context = shift;
 	my $arguments = shift;
@@ -1837,10 +1864,19 @@ sub HACK_SQRT{
 	my $argument1 = $nextArgument->();
 	my $valeur1 = MakeSUB($argument1)->($context);
 	return $valeur1 if(EstUneERREUR($valeur1));
-	#my $argument2 = $nextArgument->();
-	#my $valeur2 = MakeSUB($argument2)->($context);
-	#return $valeur2 if(EstUneERREUR($valeur1));
 	return MakeAST_NUMERIC(sqrt($valeur1->[1]));
+}
+sub internal_PRINT{
+	my $context = shift;
+	my $valeur = shift;
+	return MakeAST_ERROR("N'est pas printable !") if(!(EstSTRING($valeur) || EstNUMERIC($valeur)));
+	if($GLOBAL_MODE eq 'LIGNE'){
+		print $valeur->[1] ;
+	}else{
+		printw( $valeur->[1]);
+		refresh() if($GLOBAL_MODE eq 'ECRAN');
+	}
+	return ['VOID'];
 }
 sub HACK_PRINT{
 	my $context = shift;
@@ -1857,6 +1893,13 @@ sub HACK_PRINT{
 	}
 	return ['VOID'];
 }
+sub internal_PAUSE{
+	my $context = shift;
+	my $valeur = shift;
+	return MakeAST_ERROR("N'est pas numerique !") if(!EstNUMERIC($valeur));
+	Time::HiRes::sleep($valeur->[1]);
+	return ['VOID'];
+}
 sub HACK_PAUSE{
 	my $context = shift;
 	my $arguments= shift;
@@ -1866,6 +1909,14 @@ sub HACK_PAUSE{
 	return MakeAST_ERROR("N'est pas numerique !") if(!EstNUMERIC($valeur));
 	Time::HiRes::sleep($valeur->[1]);
 	return ['VOID'];
+}
+sub internal_EXECUTE{
+	my $context = shift;
+	my $valeur = shift;
+	return MakeAST_ERROR("N'est pas executable !") if(!EstSTRING($valeur));
+	my $executable=$valeur->[1];
+	my $retour=`$executable`;
+	return MakeAST_STRING($retour);
 }
 sub HACK_EXECUTE{
 	my $context = shift;
@@ -1878,6 +1929,17 @@ sub HACK_EXECUTE{
 	my $retour=`$executable`;
 	return MakeAST_STRING($retour);
 }
+sub internal_PEEK{
+	my $context = shift;
+	my $valeur = shift;
+	return MakeAST_ERROR("N'est pas numerique !") if(!EstNUMERIC($valeur));
+	my $adresse=$valeur->[1];
+	my $executable = "dir ";
+	my $retour=`$executable $adresse`;
+	return MakeVRAI() if($retour == 1);
+	return MakeFAUX()  if($retour == 0);
+	return MakeAST_ERROR("Valeur non booleenne !");
+}
 sub HACK_PEEK{
 	my $context = shift;
 	my $arguments= shift;
@@ -1888,9 +1950,27 @@ sub HACK_PEEK{
 	my $adresse=$valeur->[1];
 	my $executable = "dir ";
 	my $retour=`$executable $adresse`;
-	return MakeVRAIS() if($retour == 1);
+	return MakeVRAI() if($retour == 1);
 	return MakeFAUX()  if($retour == 0);
 	return MakeAST_ERROR("Valeur non booleenne !");
+}
+sub internal_POKE{
+	my $context = shift;
+	my $adresse = shift;
+	return MakeAST_ERROR("Adresse n'est pas numerique !") if(!EstNUMERIC($adresse));
+	my $bit = shift;
+	return MakeAST_ERROR("Bit n'est pas digital !") if(!EstBOOLEAN($bit));
+	my $executable='gpio -1 write';
+	my $addr = $adresse->[1];
+	my $binaryDigit;
+	if(EstVRAI($bit)){
+		$binaryDigit=1;
+	}else{
+		$binaryDigit=0;
+	}
+	gpioModeWrite($addr);
+	my $retour=`$executable $addr $binaryDigit`;
+	return MakeAST_STRING($retour);
 }
 sub HACK_POKE{
 	my $context = shift;
@@ -1904,9 +1984,8 @@ sub HACK_POKE{
 	return MakeAST_ERROR("Bit n'est pas digital !") if(!EstBOOLEAN($bit));
 	my $executable='gpio -1 write';
 	my $addr = $adresse->[1];
-	#my $binaryDigit = $bit->[1];
 	my $binaryDigit;
-	if(EstVRAIS($bit)){
+	if(EstVRAI($bit)){
 		$binaryDigit=1;
 	}else{
 		$binaryDigit=0;
@@ -1927,69 +2006,7 @@ sub gpioModeRead{
 	`gpio -1 mode $gpioPIN in ` if($GLOBAL_GPIO_PIN[$gpioPIN-1] ne 'in');
 	$GLOBAL_GPIO_PIN[$gpioPIN-1]= 'in'; 
 }
-#sub MakeSUB_FUNC{
-#	my $AST      = shift;
-#	my $funcName = $AST->[1]->[1];
-#	my $arguments= $AST->[2];
-#	return sub{
-#		my $context = shift;
-#		return HACK_ROUND ($context, $arguments) if($funcName  eq 'round');
-#		return HACK_ARRONDIS($context, $arguments) if($funcName  eq 'entier');
-#		return HACK_HASARD($context, $arguments) if($funcName  eq 'hasard');
-#		return HACK_LENGTH($context, $arguments) if(($funcName eq 'length')||($funcName eq 'longueur'));
-#		return HACK_PRINT ($context, $arguments) if(($funcName eq 'print') ||($funcName eq 'ecris'));
-#		return HACK_RESTE ($context, $arguments) if($funcName eq 'reste');
-#		return HACK_POW   ($context, $arguments) if($funcName eq 'pow');
-#		return HACK_SQRT  ($context, $arguments) if($funcName eq 'sqrt');
-#		return tkUse ($context, $arguments) if($funcName eq 'tk' );
-#		my $lambda = Context_get($context,$funcName);
-#		return MakeAST_ERROR("FONCTION $funcName NON DEFINIE") if(!defined $lambda);
-#		if(!EstLAMBDA($lambda)){
-#			#A surveiller !!!!
-#			#On doit determiner de quel type est lambda
-#			$lambda = MakeSUB($lambda)->($context);
-#			if(!EstLAMBDA($lambda)){
-#				my $err = Dumper($lambda);
-#				return MakeAST_ERROR("$funcName n'est pas une fonction: $err");
-#			}
-#		}
-#		print "DEBUG: Lambda $funcName\n" if(defined Context_get($context,'TRON') && EstVRAIS(Context_get($context,'TRON')));
-#		my $lambdaArgsList = $lambda->[1];
-#		my $code = $lambda->[2];
-#		my $lambdaContext = $lambda->[3];
-#		my $parentContext = $lambdaContext->[2];
-#		#$lambdaContext->[2]=['NULL'];
-#		my $paramContext = Context_New();
-#
-#		# On assigne chaque argument a celui
-#		# correspondant dans lambdaArgsList
-#		my $nextArgument = MakeIterator_LIST($arguments);
-#		my $nextLambdaArg= MakeIterator_LIST($lambdaArgsList);
-#		while(1){
-#			my $currentArgument = $nextArgument->();
-#			last if(EstNULL($currentArgument));
-#			my $currentLambdaArg= $nextLambdaArg->();
-#			return MakeAST_ERROR("La fonction ".$funcName." comporte moins d'arguments !") if(EstNULL($currentLambdaArg));
-#			return MakeAST_ERROR("L'identifiant " . $currentLambdaArg->[0]. " de la fonction " . $funcName . " n'est pas un identifiant !") if(!EstID($currentLambdaArg));
-#			my $argName = $currentLambdaArg->[1];
-#			# On calcul les arguments comme des gloutons
-#			# pour ne pas se melanger les pinceaux entre
-#			# les arguments de la fonctions et les arguments
-#			# de la closure (la fermeture quoi !)
-#			my $valeur = MakeSUB($currentArgument)->($context);
-#			print "DEBUG: pour $argName, " . Dumper($valeur) . "\n" if(defined Context_get($context,'TRON') && EstVRAIS(Context_get($context,'TRON')));
-#			return $valeur if(EstUneERREUR($valeur));
-#			#Context_set($lambdaContext, $argName, $valeur);
-#			Context_set($paramContext, $argName, $valeur);
-#		}
-#		#$lambdaContext->[2]=$parentContext;
-#		Context_setParent($paramContext, $lambdaContext);
-#		#my $retour = MakeSUB($code)->($lambdaContext);
-#		my $retour = MakeSUB($code)->($paramContext);
-#		print "Resultat de $funcName: " . Dumper($retour) if(defined Context_get($context,'TRON') && EstVRAIS(Context_get($context,'TRON')));;
-#		return $retour;
-#	}
-#}
+
 sub bracketOnTablo{
 	my $context =  shift;
 	my $tablo= shift;
@@ -2002,7 +2019,6 @@ sub bracketOnTablo{
 
 	my $val = $valeur->[1];
 
-	#print Dumper($localFunc)."\n";
 	return $tablo->[1]->($valeur);
 }
 sub bracketOnString{
@@ -2034,25 +2050,20 @@ sub bracketOnString{
 }
 sub bracketOnNumeric{
 	my $context =  shift;
-	#my $tablo= shift;
 	my $numeric = shift;
 	my $arguments= shift;
 	my $nextArgument = MakeIterator_LIST($arguments);
 	my $currentArgument = $nextArgument->();
 	my $valeur = MakeSUB($currentArgument)->($context);
 
-	#return MakeAST_ERROR("N'est ni du texte, ni numerique !".$valeur->[0]." ".$valeur->[1]) if(!(EstSTRING($valeur) || EstNUMERIC($valeur)));
-
 	my $val = $valeur->[1];
 
-	#print Dumper($localFunc)."\n";
 	my $ast = ['MULT', $numeric, $valeur];
 	return MakeSUB($ast)->($context);
 }
 sub MakeSUB_BRACKET{
 	my $AST      = shift;
 	my $funcExpr = $AST->[1];
-	#my $funcName = $AST->[1]->[1];
 	my $funcName; 
 	my $arguments= $AST->[2];
 	return sub{
@@ -2061,27 +2072,7 @@ sub MakeSUB_BRACKET{
 
 		if(EstID($funcExpr)){
 			$funcName = $AST->[1]->[1];
-			return HACK_ROUND   ($context, $arguments) if($funcName  eq 'round');
-			return HACK_ARRONDIS($context, $arguments) if($funcName  eq 'entier');
-			return HACK_HASARD  ($context, $arguments) if($funcName  eq 'hasard');
-			return HACK_LENGTH  ($context, $arguments) if(($funcName eq 'length')||($funcName eq 'longueur'));
-			return HACK_PRINT   ($context, $arguments) if(($funcName eq 'print') ||($funcName eq 'ecris'));
-			return HACK_RESTE   ($context, $arguments) if($funcName  eq 'reste');
-			return HACK_POW     ($context, $arguments) if($funcName  eq 'pow');
-			return HACK_SQRT    ($context, $arguments) if($funcName  eq 'sqrt');
-			return HACK_PAUSE   ($context, $arguments) if($funcName  eq 'pause');
-			return HACK_EXECUTE ($context, $arguments) if($funcName  eq 'execute');
-return HACK_PEEK($context, $arguments) if($funcName  eq 'peek');
-return HACK_POKE($context, $arguments) if($funcName  eq 'poke');
 
-			return HACK_MODE($context, $arguments) if($funcName  eq 'mode');
-			return HACK_TEST($context, $arguments) if($funcName  eq 'test');
-			return HACK_POS($context, $arguments) if($funcName  eq 'pos');
-			return HACK_RAFRAICHIS($context, $arguments) if($funcName  eq 'rafraichis');
-return HACK_EFFACE($context, $arguments) if($funcName  eq 'efface');
-return HACK_GETMAXX($context, $arguments) if($funcName  eq 'max_X');
-return HACK_GETMAXY($context, $arguments) if($funcName  eq 'max_Y');
-			return tkUse ($context, $arguments) if($funcName eq 'tk' );
 			$lambda = Context_get($context,$funcName);
 			return MakeAST_ERROR("FONCTION $funcName NON DEFINIE") if(!defined $lambda);
 
@@ -2089,6 +2080,7 @@ return HACK_GETMAXY($context, $arguments) if($funcName  eq 'max_Y');
 			return bracketOnString($context,$lambda, $arguments) if(EstSTRING($lambda));
 			return bracketOnTablo($context,$lambda, $arguments) if(EstTABLO($lambda));
 			return bracketOnNumeric($context,$lambda, $arguments) if(EstNUMERIC($lambda));
+			return Call_Internal($context,$lambda, $arguments) if(EstINTERNALFUNC($lambda));
 
 			if(!EstLAMBDA($lambda)){
 				#A surveiller !!!!
@@ -2098,6 +2090,7 @@ return HACK_GETMAXY($context, $arguments) if($funcName  eq 'max_Y');
 				return bracketOnString($context,$lambda, $arguments) if(EstSTRING($lambda));
 				return bracketOnTablo($context,$lambda, $arguments) if(EstTABLO($lambda));
 				return bracketOnNumeric($context,$lambda, $arguments) if(EstNUMERIC($lambda));
+				return Call_Internal($context,$lambda, $arguments) if(EstINTERNALFUNC($lambda));
 				if(!EstLAMBDA($lambda)){
 					my $err = Dumper($lambda);
 					return MakeAST_ERROR("$funcName n'est pas une fonction: $err");
@@ -2105,12 +2098,11 @@ return HACK_GETMAXY($context, $arguments) if($funcName  eq 'max_Y');
 			}
 
 		}else{
-			#$lambda = MakeSUB($lambda)->($context);
 			$lambda = MakeSUB($funcExpr )->($context);
-			#print Dumper($lambda);
 			return bracketOnString($context,$lambda, $arguments) if(EstSTRING($lambda));
 			return bracketOnTablo($context,$lambda, $arguments) if(EstTABLO($lambda));
 			return bracketOnNumeric($context,$lambda, $arguments) if(EstNUMERIC($lambda));
+			return Call_Internal($context,$lambda, $arguments) if(EstINTERNALFUNC($lambda));
 			if(!EstLAMBDA($lambda)){
 					#Cas du deflambda !
 					$lambda = MakeSUB($lambda)->($context);
@@ -2121,12 +2113,11 @@ return HACK_GETMAXY($context, $arguments) if($funcName  eq 'max_Y');
 				}
 		}
 
-		print "DEBUG: Lambda $funcName\n" if(defined Context_get($context,'TRON') && EstVRAIS(Context_get($context,'TRON')));
+		print "DEBUG: Lambda $funcName\n" if(defined Context_get($context,'TRON') && EstVRAI(Context_get($context,'TRON')));
 		my $lambdaArgsList = $lambda->[1];
 		my $code = $lambda->[2];
 		my $lambdaContext = $lambda->[3];
 		my $parentContext = $lambdaContext->[2];
-		#$lambdaContext->[2]=['NULL'];
 		my $paramContext = Context_New();
 
 		# On assigne chaque argument a celui
@@ -2145,16 +2136,13 @@ return HACK_GETMAXY($context, $arguments) if($funcName  eq 'max_Y');
 			# les arguments de la fonctions et les arguments
 			# de la closure (la fermeture quoi !)
 			my $valeur = MakeSUB($currentArgument)->($context);
-			print "DEBUG: pour $argName, " . Dumper($valeur) . "\n" if(defined Context_get($context,'TRON') && EstVRAIS(Context_get($context,'TRON')));
+			print "DEBUG: pour $argName, " . Dumper($valeur) . "\n" if(defined Context_get($context,'TRON') && EstVRAI(Context_get($context,'TRON')));
 			return $valeur if(EstUneERREUR($valeur));
-			#Context_set($lambdaContext, $argName, $valeur);
 			Context_set($paramContext, $argName, $valeur);
 		}
-		#$lambdaContext->[2]=$parentContext;
 		Context_setParent($paramContext, $lambdaContext);
-		#my $retour = MakeSUB($code)->($lambdaContext);
 		my $retour = MakeSUB($code)->($paramContext);
-		print "Resultat de $funcName: " . Dumper($retour) if(defined Context_get($context,'TRON') && EstVRAIS(Context_get($context,'TRON')));;
+		print "Resultat de $funcName: " . Dumper($retour) if(defined Context_get($context,'TRON') && EstVRAI(Context_get($context,'TRON')));;
 		return $retour;
 	}
 }
@@ -2216,17 +2204,13 @@ sub MakeSUB_BOUCLEPOUR{
 		Context_set($newContext,$var_name,MakeAST_NUMERIC($valeur));
 		Context_setParent($newContext, $context);
 		while($valeur <= $last->[1]){
-			#Context_set($context,$var_name,MakeAST_NUMERIC($valeur));
 			Context_set($newContext,$var_name,MakeAST_NUMERIC($valeur));
-			#$result = $instruct->($context);
 			$result = $instruct->($newContext);
 			return $result if(EstUneERREUR($result));
 			#On incremente valeur (qui a pu etre modifiee
 			#par le programme)
-			#$valeur = Context_get($context,$var_name)->[1];
 			$valeur = Context_get($newContext,$var_name)->[1];
 			$valeur += $inc->[1];
-			#Context_set($context,$var_name,MakeAST_NUMERIC($valeur));
 			Context_set($newContext,$var_name,MakeAST_NUMERIC($valeur));
 		}
 		return $result;
@@ -2241,12 +2225,8 @@ sub MakeSUB_POURCHAQUE{
 	return sub{
 		my $context = shift;
 		my $var_name = $Identifiant->[1];
-		#say "Recherche de liste";
 		my $liste = MakeSUB($instructionliste)->($context);
-		#print Dumper($liste);
-		#say "Recherche de valeur";
 		my $valeur = ['VOID'];
-		#say "Recherche de suite";
 		my $instruct = MakeSUB($instructions);
 		my $result;
 		my $newContext = Context_New();
@@ -2267,26 +2247,44 @@ sub MakeSUB_POURCHAQUE{
 		return $result;
 	}
 }
-#######################################################
-sub tkUse{
-#	my $context = shift;
-#	my $arguments = shift;
-#	my $mw = MainWindow->new;
-#    $mw->Label(-text => 'Hello, world!')->pack;
-#	my $canvas = $mw->new_tk__canvas();
-#    $mw->Button(
-#        -text    => 'Quit',
-#        -command => sub { $mw->destroy()},
-#    )->pack;
-#    MainLoop;
-	return ['VOID'];
+
+sub addInternalFunc{
+	my $context= shift;
+	my @funcTable = @_;
+	foreach my $f (@funcTable){
+		# funcName: f->[0]; funcBody: f->[1]
+		Context_set($context, $f->[0], $f->[1]);
+	}
+}
+
+sub installInternalFunc{
+	my $context = shift;
+	addInternalFunc($context,
+		['round', MakeAST_INTERNALFUNC(\&internal_ROUND)],
+		['entier', MakeAST_INTERNALFUNC(\&internal_ARRONDIS)],
+		['hasard', MakeAST_INTERNALFUNC(\&internal_HASARD  )],
+		['longueur', MakeAST_INTERNALFUNC(\&internal_LENGTH)],
+		['ecris', MakeAST_INTERNALFUNC(\&internal_PRINT)],
+		['reste', MakeAST_INTERNALFUNC(\&internal_RESTE)],
+		['pow', MakeAST_INTERNALFUNC(\&internal_POW)],
+		['sqrt', MakeAST_INTERNALFUNC(\&internal_SQRT)],
+		['pause', MakeAST_INTERNALFUNC(\&internal_PAUSE)],
+		['execute', MakeAST_INTERNALFUNC(\&internal_EXECUTE)],
+		['peek', MakeAST_INTERNALFUNC(\&internal_PEEK)],
+		['poke', MakeAST_INTERNALFUNC(\&internal_POKE)],
+		['mode', MakeAST_INTERNALFUNC(\&internal_MODE)],
+		['pos' , MakeAST_INTERNALFUNC(\&internal_POS)],
+		['rafraichis', MakeAST_INTERNALFUNC(\&internal_RAFRAICHIS)],
+		['efface' , MakeAST_INTERNALFUNC(\&internal_EFFACE)],
+		['max_X' , MakeAST_INTERNALFUNC(\&internal_MAXX)],
+		['max_Y' , MakeAST_INTERNALFUNC(\&internal_MAXY)],
+	);
 }
 
 
 sub load{
 	my $context = shift;
 	my $file= (shift || "code");
-	#$file =~ s/(.*)\s+/$1/;
 	$file .= ".bas";
 	if(-e $file){
 		say "loading $file";
@@ -2296,17 +2294,14 @@ sub load{
 			#On ignore les commemtaire (commencent par #)
 			#ainsi que les lignes vides
 			if($ligne !~ /^\s*#/ && ($ligne !~ /^\s*$/)){
-				#if($ligne !~ /\{\s*$/){
 					#On ajoute ; en fin de ligne
 					#sauf si elle finit par la REGEX
 					$ligne .=';' if($ligne !~ /(\,|:|\{|=|<-|;|\(|si|alors|sinon|jusqu'a)\s*$/);
 					#On enleve le ; en fin de la precedente ligne
 					#si la nouvelle ligne commence par la REGEX
 					$fichier =~ s/(.*);$/$1/ if($ligne =~ /^\s*(\,|:|\}|=|<-|;|\)|alors|sinon|suivant|fin|jusqu'a)/);
-					#}
 				$fichier .= $ligne;
 			}
-			#TraiteLigne($ligne, $context);
 		}
 		print $fichier . "\n";
 		TraiteLigne($fichier, $context);
@@ -2327,20 +2322,18 @@ sub TraiteLigne{
 			say "Erreur de syntaxe au niveau de **$input**";
 			return;
 		}
-		print Dumper($ast) if(defined Context_get($context,'CLU') && EstVRAIS(Context_get($context,'CLU')));
-		#print Dumper($ast);
+		print Dumper($ast) if(defined Context_get($context,'CLU') && EstVRAI(Context_get($context,'CLU')));
 		$ast = RemoveNOTHING($ast, 0);
-		print Dumper($ast) if(defined Context_get($context,'TRON') && EstVRAIS(Context_get($context,'TRON')));
+		print Dumper($ast) if(defined Context_get($context,'TRON') && EstVRAI(Context_get($context,'TRON')));
 		my $sub = MakeSUB($ast);
 		my $resultatSUB = $sub->($context);
-		if(defined Context_get($context,'TRON') && EstVRAIS(Context_get($context,'TRON'))){
+		if(defined Context_get($context,'TRON') && EstVRAI(Context_get($context,'TRON'))){
 			say "Resultat:";
 			print Dumper($resultatSUB);
 		}else{
 			if(EstUneERREUR($resultatSUB)){
 				print $resultatSUB->[0] . ": " . $resultatSUB->[1] . "\n";
 			}else{
-				#print $resultatSUB->[1]."\n" unless(EstVOID($resultatSUB));
 				#ATTENTION, gros hack !!!
 				MakeSUB_AFFICHE(['AFFICHE',$resultatSUB])->($context) unless(EstVOID($resultatSUB));
 			}
@@ -2355,14 +2348,15 @@ my $prompt = "(0)> ";
 my $OUT = $term->OUT || \*STDOUT;
 my @in = ();
 my $ind = 0;
-#say $term->ReadLine;
 my $attribs = $term->Attribs;
 $attribs->{completion_function} = sub{
 	my ($text, $line, $start) = @_;
 	return listBASFiles() if($line =~ /load\s+$text$/);
-	#print "\n$text ** $line ** $start\n";
 	return qw(load pour chaque si sinon fin ciao exit affiche suivant jusqu'a);
 };
+
+# Installation des fonctions internes:
+installInternalFunc($context);
 
 sub listBASFiles{
 	my @files = <*.bas>;
@@ -2374,9 +2368,6 @@ sub listBASFiles{
 	return @files;
 }
 
-#print "($ind)> ";
-#Context_set($context, 'TRON', ['BOOLEAN','VRAIS']);
-#while(my $input = <>){
 while( defined(my $input = $term->readline($prompt))){
 	chomp($input);
 	exit if($input =~ /^\s*(bye|ciao|quit|exit)\s*$/);
@@ -2387,5 +2378,4 @@ while( defined(my $input = $term->readline($prompt))){
 	}
 	else{ TraiteLigne($input, $context)};
 	$term->addhistory($input) if $input !~ /\S/;
-	#print "($ind)> ";
 }
