@@ -1471,6 +1471,8 @@ sub MakeSUB_EQUALITE{
 		return $lhs if(EstNOTHING($rhs));
 		#ATTENTION il faut verifier que les types soient valables !
 		return MakeAST_VRAI() if(EstVOID($lhs) && EstVOID($rhs));
+		return MakeAST_VRAI() if(EstVOID($lhs) && EstSTRING($rhs) && $rhs->[1] eq '');
+		return MakeAST_VRAI() if(EstVOID($rhs) && EstSTRING($lhs) && $lhs->[1] eq '');
 		return MakeAST_FAUX if(EstVOID($lhs) || EstVOID($rhs));
 		return MakeAST_VRAI() if($lhs->[1] eq $rhs->[1]);
 		return MakeAST_FAUX;
