@@ -57,11 +57,11 @@ f'(4)
 Les opérations:
 ---------------
 
-- Addition
+- Addition  
 	`1+1`  
 	`> 2`  
 
-	`"Bonjour " + "le monde "`
+	`"Bonjour " + "le monde "`  
 	`> Bonjour le monde`  
 
 	`1+"a"`  
@@ -73,7 +73,7 @@ Les opérations:
 	`[1,2,3] + [4,5,6]`  
 	`> [5,7,9]`  
 
-- Soustraction
+- Soustraction  
 	`2-1`  
 	`> 1`  
 
@@ -87,11 +87,11 @@ Les opérations:
 
 	On ne peut pas soustraire du texte  
 
-- Multiplication
+- Multiplication  
 	`3 * 2`  
 	`> 2`  
 
-	`3 * "a"`  
+	`3 * "a"`   
 	`> aaa`  
 	`"a" * 3`  
 	`> aaa`  
@@ -100,35 +100,77 @@ Les opérations:
 	`> [3,6,9]`  
 
 	`3 * ["a","b","c"]`  
-	`> ["aaa","bbb","ccc"]`
+	`> ["aaa","bbb","ccc"]` 
 
-- Division
-	`4/2`
-	`> 2`
+- Division  
+	`4/2`  
+	`> 2`  
 
-	`5/2`
-	`> 2.5`
+	`5/2`  
+	`> 2.5`  
 
-	`[4,5,7]/2`
+	`[4,5,7]/2`  
 	`> [2,2.5,3.5]`  
 
 	`2/[4,5,8]`  
 	`> [0.5,0.4,0.25]`  
 
-	On ne peut pas diviser du texte
+	On ne peut pas diviser du texte  
 
 
-Les structures du language:
+Les structures du language:  
 ---------------------------
 
-- Les conditions
+- Les conditions  
 	`si test alors v sinon w fin`  
-```	si a=b alors  
+```	
+	si a=b alors  
 		k<-f(z)  
 		g(k)  
 	sinon  
 		a<-a+1  
 		a  
 	fin  
+```   
+	Les conditions renvoient des valeur, il est par exemple possible d'écrire:  
 ```
+	v <- 2 + si vrai alors 1 sinon 2 fin   
+```  
+
+- Les boucles  
+	La boucle tant que
+```
+	tant que a:
+		b<-b-1  
+		affiche b  
+		si b=0 alors a <- faux fin  
+	fin  
+```  
+
+	La boucle pour (inspirée du BASIC, comme tout ce qui peut sembler incohérent).
+```
+	pour index = 3 jusqu'a 10:  
+		affiche index  
+	suivant  
+```  
+	On peut aussi utiliser un incrément  
+```
+	pour j = 12 jusqu'a 15 increment 0.2:  
+		affiche j  
+	suivant  
+```  
+
+	La boucle pour chaque.  
+	Elle permet d'itérer à travers des tableaux ou du texte ( ou certaines structure particulières que nous verrons plus tard).  
+```  
+	pour chaque element de [1,3,4,6]:  
+		affiche element  
+	fin  
+```  
+
+```  
+	pour chaque lettre de "abcde":  
+		affiche lettre  
+	fin  
+```  
 
