@@ -573,6 +573,11 @@ sub EstTABLO{
 	return 1 if(Est_de_TYPE($value, 'TABLO'));
 	return 0;
 }
+sub EstDEFTABLO{
+	my $value = shift;
+	return 1 if(Est_de_TYPE($value, 'DEFTABLO'));
+	return 0;
+}
 
 sub EstCONTEXT{
 	my $value = shift;
@@ -657,6 +662,12 @@ sub MakeAST_STRING{
 sub EstSTRING{
 	my $valeur = shift;
 	return 1 if($valeur->[0] eq 'STRING');
+	return 0;
+}
+
+sub EstSTRINGQUOTE{
+	my $valeur = shift;
+	return 1 if($valeur->[0] eq 'STRINGQUOTE');
 	return 0;
 }
 
@@ -1910,7 +1921,7 @@ sub bracketOnString{
 }
 sub bracketOnNumeric{
 	my $context =  shift;
-	my $numeric = shift;
+	my $numeric =  shift;
 	my $arguments= shift;
 	my $nextArgument = MakeIterator_LIST($arguments);
 	my $currentArgument = $nextArgument->();
@@ -1921,10 +1932,47 @@ sub bracketOnNumeric{
 	my $ast = ['MULT', $numeric, $valeur];
 	return MakeSUB($ast)->($context);
 }
+sub bracketOnLambda{
+	my $context   = shift;
+	my $lambda    = shift;
+	my $arguments = shift;
+	my $funcName  = shift;
+	
+	my $lambdaArgsList = $lambda->[1];
+	my $code = $lambda->[2];
+	my $lambdaContext = $lambda->[3];
+	my $parentContext = $lambdaContext->[2];
+	my $paramContext = Context_New();
+
+	# On assigne chaque argument a celui
+	# correspondant dans lambdaArgsList
+	my $nextArgument = MakeIterator_LIST($arguments);
+	my $nextLambdaArg= MakeIterator_LIST($lambdaArgsList);
+	while(1){
+		my $currentArgument = $nextArgument->();
+		last if(EstNULL($currentArgument));
+		my $currentLambdaArg= $nextLambdaArg->();
+		return MakeAST_ERROR("La fonction ".$funcName." comporte moins d'arguments !") if(EstNULL($currentLambdaArg));
+		return MakeAST_ERROR("L'identifiant " . $currentLambdaArg->[0]. " de la fonction " . $funcName . " n'est pas un identifiant !") if(!EstID($currentLambdaArg));
+		my $argName = $currentLambdaArg->[1];
+		# On calcul les arguments comme des gloutons
+		# pour ne pas se melanger les pinceaux entre
+		# les arguments de la fonctions et les arguments
+		# de la closure (la fermeture quoi !)
+		my $valeur = MakeSUB($currentArgument)->($context);
+		print "DEBUG: pour $argName, " . Dumper($valeur) . "\n" if(defined Context_get($context,'TRON') && EstVRAI(Context_get($context,'TRON')));
+		return $valeur if(EstUneERREUR($valeur));
+		Context_set($paramContext, $argName, $valeur);
+	}
+	Context_setParent($paramContext, $lambdaContext);
+	my $retour = MakeSUB($code)->($paramContext);
+	print "Resultat de $funcName: " . Dumper($retour) if(defined Context_get($context,'TRON') && EstVRAI(Context_get($context,'TRON')));;
+	return $retour;
+}
 sub MakeSUB_BRACKET{
 	my $AST      = shift;
 	my $funcExpr = $AST->[1];
-	my $funcName; 
+	my $funcName = "'indefini'"; 
 	my $arguments= $AST->[2];
 	return sub{
 		my $context = shift;
@@ -1936,44 +1984,43 @@ sub MakeSUB_BRACKET{
 			$lambda = Context_get($context,$funcName);
 			return MakeAST_ERROR("FONCTION $funcName NON DEFINIE") if(!defined $lambda);
 
-			#Si la variable est un string
-			return bracketOnString($context,$lambda, $arguments) if(EstSTRING($lambda));
-			return bracketOnTablo($context,$lambda, $arguments) if(EstTABLO($lambda));
-			return bracketOnNumeric($context,$lambda, $arguments) if(EstNUMERIC($lambda));
-			return Call_Internal($context,$lambda, $arguments) if(EstINTERNALFUNC($lambda));
-
-			if(!EstLAMBDA($lambda)){
+			if(EstID($lambda)){
 				#A surveiller !!!!
 				#Necessaire lorsque l'on utilise un '=' et non '<-'
 				#On doit determiner de quel type est lambda
 				$lambda = MakeSUB($lambda)->($context);
-				return bracketOnString($context,$lambda, $arguments) if(EstSTRING($lambda));
-				return bracketOnTablo($context,$lambda, $arguments) if(EstTABLO($lambda));
-				return bracketOnNumeric($context,$lambda, $arguments) if(EstNUMERIC($lambda));
-				return Call_Internal($context,$lambda, $arguments) if(EstINTERNALFUNC($lambda));
-				if(!EstLAMBDA($lambda)){
-					my $err = Dumper($lambda);
-					return MakeAST_ERROR("$funcName n'est pas une fonction: $err");
-				}
 			}
 
 		}else{
 			$lambda = MakeSUB($funcExpr )->($context);
-			return bracketOnString($context,$lambda, $arguments) if(EstSTRING($lambda));
-			return bracketOnTablo($context,$lambda, $arguments) if(EstTABLO($lambda));
-			return bracketOnNumeric($context,$lambda, $arguments) if(EstNUMERIC($lambda));
-			return Call_Internal($context,$lambda, $arguments) if(EstINTERNALFUNC($lambda));
-			if(!EstLAMBDA($lambda)){
-					#Cas du deflambda !
-					$lambda = MakeSUB($lambda)->($context);
-					if(!EstLAMBDA($lambda)){
-						my $err = Dumper($lambda);
-						return MakeAST_ERROR("n'est pas une fonction: $err");
-					}
-				}
+
+			if(EstID($lambda)){
+				#Cas du deflambda !
+				$lambda = MakeSUB($lambda)->($context);
+			}
 		}
 
+		return bracketOnTablo($context, MakeSUB($lambda)->($context), $arguments) if(EstDEFTABLO($lambda));
+		return bracketOnString($context, MakeSUB($lambda)->($context), $arguments) if(EstSTRINGQUOTE($lambda));
+
+		return bracketOnString($context,$lambda, $arguments) if(EstSTRING($lambda));
+		return bracketOnTablo($context,$lambda, $arguments) if(EstTABLO($lambda));
+		return bracketOnNumeric($context,$lambda, $arguments) if(EstNUMERIC($lambda));
+
+		return Call_Internal($context,$lambda, $arguments) if(EstINTERNALFUNC($lambda));
+
+		return bracketOnLambda($context,$lambda, $arguments, $funcName) if(EstLAMBDA($lambda));
+
+		if(!EstLAMBDA($lambda)){
+			my $err = Dumper($lambda);
+			return MakeAST_ERROR("n'est pas une fonction: $err");
+		}
+
+		return ['VOID'];
+
+
 		print "DEBUG: Lambda $funcName\n" if(defined Context_get($context,'TRON') && EstVRAI(Context_get($context,'TRON')));
+
 		my $lambdaArgsList = $lambda->[1];
 		my $code = $lambda->[2];
 		my $lambdaContext = $lambda->[3];
