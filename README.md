@@ -18,9 +18,16 @@ Elles sont composées des caractères `[A-Za-z_'][A-Za-z_']`.
 Le caractère quote est valide pour les noms de variables mais ne peut en être le premier caractère, cela permet entre autre de l'utiliser pour nommer une fonction dérivée.  
 
 
-## Les instruction ##
+## Les instruction ##  
 
-
+Les instructions sont séparées par des points virgules, ou simplement des retours chariot.  
+```  
+a<-3; b<- vrai ; c<-2  
+k <- si b alors a sinon c fin; w<-12  
+w+k  
+> 15  
+```  
+  
 L'affectation:  
 --------------
 
@@ -51,6 +58,7 @@ d(f)=\(x){(f(x+epsilon)-f(x))/epsilon}
 g(x) = 3*x+2  
 f'<- d(g)  
 f'(4)
+> 3  
 ```  
 
 
@@ -136,6 +144,11 @@ Les structures du language:
 ```
 	v <- 2 + si vrai alors 1 sinon 2 fin   
 ```  
+	On peut ainis écrire la fonction factorielle comme suit:  
+```  
+	fact(n) = si n=1 alors 1 sinon n*fact(n-1) fin  
+```  
+
 
 - Les boucles  
 	La boucle tant que
