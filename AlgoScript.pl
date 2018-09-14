@@ -199,9 +199,9 @@ my $grammarNum = <<'_EOGRAMMARNUM_';
 	RIEN : "rien"
 			{['VOID']}
 
-	INPUT : "entree?"
+	INPUT : "lis"
 			{['INPUT']}
-			| "?"
+			| "lire"
 			{['INPUT']}
 
 	VALEUR :  FAUX
