@@ -13,9 +13,6 @@ Il supporte actuellement les type suivant:
 - rien (peut être assimilé à un tableau vide ou un texte vide)
 - les fonctions  
   
-Les variables:  
-Elles sont composées des caractères `[A-Za-z_'][A-Za-z_']`.  
-Le caractère quote est valide pour les noms de variables mais ne peut en être le premier caractère, cela permet entre autre de l'utiliser pour nommer une fonction dérivée.  
 
 
 ## Les instruction ##  
@@ -27,11 +24,19 @@ k <- si b alors a sinon c fin; w<-12
 w+k  
 > 15  
 ```  
-  
-L'affectation:  
---------------
+Elles peuvent aussi être regroupées entre accolades.  
+```  
+incB <- { b <- b+1; affiche b; b}  
+```  
 
-On utilise 2 syntaxes, "prend la valeur" et "<-".  
+## Les variables ##  
+Elles sont composées des caractères `[A-Za-z_][A-Za-z_']`.  
+Le caractère quote est valide pour les noms de variables mais ne peut en être le premier caractère, cela permet entre autre de l'utiliser pour nommer une fonction dérivée.  
+ 
+### L'affectation: ###  
+
+
+On utilise 2 syntaxes, "prend la valeur" et son racourci "<-".  
 Exemples  
 `a prend la valeur "Salut le monde"`  
 `b prend la valeur 3.14159`  
@@ -61,6 +66,77 @@ f'(4)
 > 3  
 ```  
 
+### L'assignation: ###
+
+
+Permet d'assigner des instructions à une variable  
+```
+b <- 3; a = affiche b  
+a  
+> 3  
+b <- 4  
+a  
+> 4  
+```    
+```  
+y = 3*x+2  
+x <-2  
+y  
+> 8  
+x <-0; y  
+> 2  
+```  
+```  
+b <- 4
+a = { affiche b; b <- b-1; si b > 0 alors a fin}  
+a  
+> 4  
+> 3  
+> 2  
+> 1  
+```  
+L'instruction suivante est valide  
+```  
+a = a+1  
+```  
+Cependant, essayer d'evaluer la valeur de "a" produira une boucle infini.  
+  
+
+L'intéret de l'assignation peut paraitre obscure. En effet elle semble ne rien apporter, à part des complications.  
+Cependant, son utilité principale réside dans la manipulation de "formules mathematique". Et il est préfèrable de s'en tenir à cette utilisation. A moins bien entendu que vous ne soyez nostalgiques des bon vieux code spaghetti, et des "formules magiques" !  
+
+### Les contexts ###  
+  
+Par défaut, les variables sont globales. Pour modifier ce comportement, nous utilisons des contexts d'évaluation.  
+Par exemple, pour étudier l'équation d'une droite, nous pouvons faire:  
+```  
+y = a*x+b  
+a<-1; b<-2  
+x<-1  
+y  
+> 3 
+pour x = 0 jusqu'a 3: affiche y suivant  
+> 2  
+> 3  
+> 4  
+> 5  
+```  
+Mais si nous voulons tester ce que donne des valeurs différentes de a et b, nous pouvons écrire.  
+```  
+pour a<-0, b<-3: affiche y fin  
+> 3  
+a
+> 1  
+b  
+> 2  
+```  
+```  
+pour a<- -5, b <- 10: pour x=0 jusqu'a 3: affiche y suivant fin  
+> 10  
+> 5  
+> 0  
+> -5  
+```  
 
 Les opérations:
 ---------------
@@ -125,6 +201,44 @@ Les opérations:
 
 	On ne peut pas diviser du texte  
 
+- Concatenation
+	`[1,2,3] & [4,5]`  
+	`> [1,2,3,4,5]`  
+  
+	`"Salut " & "le " & "Monde"`  
+	`> Salut le Monde`  
+  
+	`1 & 2`  
+	`> 12`  
+
+- Parenthesage
+	`a <- [1,2,3,4]`  
+	`a(0)`  
+	`> 1`  
+  
+	`[1,2,3,4](0)`  
+	`> 1`  
+  
+	`b <- "Coucou le monde"`  
+	`b(0)`  
+	`> C`  
+  
+	`"Salut le monde !"(0)`  
+	`> S`  
+  
+	`c <- 3`  
+	`c(2)`  
+	`> 6`  
+	`3(2)`  
+	`> 6`  
+	`x <- 1`  
+	`(x-2)(x+2)`  
+	`> -3`  
+  
+	`f(x) = 3*x + 2`  
+	`f(1)`  
+	`> 5`  
+
 
 Les structures du language:  
 ---------------------------
@@ -144,7 +258,7 @@ Les structures du language:
 ```
 	v <- 2 + si vrai alors 1 sinon 2 fin   
 ```  
-	On peut ainis écrire la fonction factorielle comme suit:  
+	On peut ainsi écrire la fonction factorielle comme suit:  
 ```  
 	fact(n) = si n=1 alors 1 sinon n*fact(n-1) fin  
 ```  
@@ -152,7 +266,8 @@ Les structures du language:
 
 - Les boucles  
 	La boucle tant que
-```
+```  
+	a<- vrai
 	tant que a:
 		b<-b-1  
 		affiche b  
