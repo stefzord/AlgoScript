@@ -302,3 +302,12 @@ Les structures du language:
 	fin  
 ```  
 
+De même que pour les conditions, les boucles renvoient une valeur, celle de la dernière instruction exécutée.  
+Ce comportement est le même pour la définition de contextes ("pour"):  
+```  
+	y = 3*x+2  
+	v <- pour x<-4: y fin  
+	v  
+	> 14  
+``` 
+
