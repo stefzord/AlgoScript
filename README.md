@@ -173,7 +173,7 @@ Les opérations:
 
 - Multiplication  
 	`3 * 2`  
-	`> 2`  
+	`> 6`  
 
 	`3 * "a"`   
 	`> aaa`  
@@ -184,7 +184,10 @@ Les opérations:
 	`> [3,6,9]`  
 
 	`3 * ["a","b","c"]`  
-	`> ["aaa","bbb","ccc"]` 
+	`> ["aaa","bbb","ccc"]`  
+  
+	`[1,2,3] * [4,5,6]`  
+	`> [4,10,18]`  
 
 - Division  
 	`4/2`  
@@ -198,6 +201,9 @@ Les opérations:
 
 	`2/[4,5,8]`  
 	`> [0.5,0.4,0.25]`  
+  
+	`[20,30,40] / [2,3,4]`  
+	`> [10,10,10]`  
 
 	On ne peut pas diviser du texte  
 
@@ -254,11 +260,15 @@ Les structures du language:
 		a  
 	fin  
 ```   
+
 	Les conditions renvoient des valeur, il est par exemple possible d'écrire:  
+
 ```
 	v <- 2 + si vrai alors 1 sinon 2 fin   
 ```  
+
 	On peut ainsi écrire la fonction factorielle comme suit:  
+
 ```  
 	fact(n) = si n=1 alors 1 sinon n*fact(n-1) fin  
 ```  
@@ -275,13 +285,16 @@ Les structures du language:
 	fin  
 ```  
 
-	La boucle pour (inspirée du BASIC, comme tout ce qui peut sembler incohérent).
+	La boucle pour (inspirée du BASIC, comme tout ce qui peut sembler incohérent).  
+
 ```
 	pour index = 3 jusqu'a 10:  
 		affiche index  
 	suivant  
 ```  
+
 	On peut aussi utiliser un incrément  
+
 ```
 	pour j = 12 jusqu'a 15 increment 0.2:  
 		affiche j  
@@ -290,6 +303,7 @@ Les structures du language:
 
 	La boucle pour chaque.  
 	Elle permet d'itérer à travers des tableaux ou du texte ( ou certaines structure particulières que nous verrons plus tard).  
+
 ```  
 	pour chaque element de [1,3,4,6]:  
 		affiche element  
