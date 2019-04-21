@@ -3,20 +3,24 @@
 use strict;
 use warnings;
 use 5.010;
-use Parse::RecDescent;
 use Data::Dumper;
 use Time::HiRes;
+use ParserRecdescent;
+use Compile;
+use AST;
 #use Curses;
 use Term::ReadLine;
-#use Wx;
-#use Tk;
-#use Tkx;
 
 use vars qw($AST_Build);
 
 # Idee pour sauvegarder l'AST:
 # http://alumnus.caltech.edu/~svhwan/prodScript/useDataDumper.html
 
+# FIXME: Bug dans Concatene, ["a","b","c"] & "e"
+# concatene l'adresse du tableau avec "e"
+# FIXME: La variable speciale CONTEXT ne fonctionne plus
+# Elle est basee sur les contextes HASH alors qu'ils
+# sont en ARRAY
 # VERSION KSCRIPT 0.007:
 # 	- Utilisation de 3(2+1)
 # 	pour les numeric, les vecteurs et strings
@@ -71,10 +75,6 @@ use vars qw($AST_Build);
 # AJOUT DES STRINGS (ALPHA)
 # AJOUT boucle "pour i = x jusqu'a y: instructions suivant"
 
-$::RD_ERRORS = 1; #Parser dies when it encounters an error
-$::RD_WARN   = 1; #Enable warnings - warn on unused rules &c.
-$::RD_HINT   = 1; #Give out hints to help fix problems.
-#$::RD_TRACE = 1; #Trace parser's behaviour
 
 my $GLOBAL_MODE = 'LIGNE';#On peut aussi avoir 'ECRAN'
 my @GLOBAL_GPIO_PIN = ();
@@ -82,263 +82,7 @@ foreach my $i (1..40){
 	push @GLOBAL_GPIO_PIN ,"UNDEF";
 }
 
-my $grammarNum = <<'_EOGRAMMARNUM_';
 
-	############################################
-	# ATTENTION: ne pas separer les expression #
-	#   NUMERIQUES des expressions BOOLEANS    #
-	############################################
-
-
-
-	expression_boolean: equalite_boolean
-	
-	equalite_boolean : strictsup_expr equal_boolean
-		{['EQUALITE', $item[1], $item[2]]}
-	equal_boolean: '=' equalite_boolean
-		{$item[2]}
-		| # nothing
-		{['NOTHING']}
-
-	strictsup_expr: or_expr supstrict
-		{['STRICTSUP', $item[1], $item[2]]}
-	supstrict: '>' strictsup_expr
-		{$item[2]}
-		| # nothing
-		{['NOTHING']}
-	
-	or_expr : and_expr ou_expr
-		{['OR', $item[1], $item[2]]}
-	ou_expr: 'ou' or_expr
-		{$item[2]}
-		| # nothing
-		{['NOTHING']}
-
-
-	#and_expr : add_expr et_expr
-	#	{['AND', $item[1], $item[2]]}
-	and_expr : concaten_expr et_expr
-		{['AND', $item[1], $item[2]]}
-	et_expr : 'et' and_expr
-		{$item[2]}
-		| # nothing
-		{['NOTHING']}
-
-
-	
-	#expression_numerique : add_expr
-	expression_numerique : concaten_expr
-	
-	concaten_expr: add_expr concat_expr
-		{['CONCATENE', $item[1], $item[2]]}
-	concat_expr: '&' concaten_expr
-		{$item[2]}
-		| #nothing
-		{['NOTHING']}
-
-	add_expr : subs_expr plus_expr
-		{['ADD',$item[1], $item[2]]}
-	plus_expr: '+' add_expr
-		{$item[2]}
-		| # nothing
-		{['NOTHING']}
-
-
-	subs_expr : div_expr moins_expr
-			{['SUBS', $item[1], $item[2]]}
-	moins_expr: '-' subs_expr
-		{$item[2]}
-		| # nothing
-		{['NOTHING']}
-
-
-	div_expr : mult_expr divise_expr
-			{['DIV', $item[1], $item[2]]}
-	divise_expr: '/' div_expr
-		{$item[2]}
-		| # nothing
-		{['NOTHING']}
-
-
-	mult_expr : not_expr multiplie_expr
-			{['MULT', $item[1], $item[2]]}
-	multiplie_expr: '*' mult_expr
-		{$item[2]}
-		#| identifiant 
-		#{$item[1]}
-		| # nothing
-		{['NOTHING']}
-
-	not_expr : 'non' brack_expr
-			{['NOT', $item[2]]}
-#			| brack_expr
-			| brack_operator
-
-	brack_operator:
-			brack_expr '(' ')'
-			{['BRACKET', $item[1], ['NULL']]}
- 			|brack_expr '(' arguments ')'
-			{['BRACKET',$item[1],$item[3]]}
-			|
-			brack_expr
-
-	brack_expr : DEFLAMBDA
-			| defTablo
-			|
-			'(' expression_boolean')'
-			{$item[2]}
-			| code 
-			| instructionnable 
-			| VALEUR
-	
-	FAUX : "faux"
-			{['BOOLEAN','FAUX']}
-	VRAI : "vrai"
-			{['BOOLEAN','VRAI']}
-
-	RIEN : "rien"
-			{['VOID']}
-
-	INPUT : "lis"
-			{['INPUT']}
-			| "lire"
-			{['INPUT']}
-
-	VALEUR :  FAUX
-		| VRAI
-		|  RIEN
-		| INPUT
-		| NUMERIC
-		| STRINGQUOTE
-		| identifier
-		#| LAMBDA
-
-	NUMERIC : /(\+|\-)?\d+(\.(\d+))*/
-			{['NUMERIC', $item[1]]}
-
-	# ATTENTION: les guillemets sont
-	# conservees lors du parsing !
-	STRINGQUOTE : /"([^"\\]|\\["\\])*"/
-			{['STRINGQUOTE', $item[1]]}
-
-	identifier : #func |
-				identifiant
-
-	identifiant: /[a-z_][a-z0-9_\']*/i
-			{['ID',$item[1]]} 
-
-	DEFLAMBDA : '\(' params ')' code
-			{['DEFLAMBDA', $item[2], $item[4]]}
-
-#	func :	identifiant '(' ')'
-#			{['FUNC', $item[1], ['NULL']]}
-#			|identifiant '(' arguments ')' #Utilisation de fonction
-#			{['FUNC', $item[1], $item[3]]}
-
-	defunc : identifiant '(' params ')'    #Definition de fonction
-			{['DEFUNC', $item[1], $item[3]]}
-
-    defTablo: '[' arguments ']'
-			{['DEFTABLO', $item[2]]}
-			| '[' ']'
-			{['DEFTABLO', ['VOID']]}
-			| '[' expression  '..'  expression  ']'
-			{['DEFRANGE', $item[2],$item[4]]}
-	
-	assign : defunc '=' instruction
-		{['FUNCASSIGN', $item[1], $item[3]]}
-		|	 identifier '=' instruction
-		{['ASSIGN', $item[1], $item[3]]}
-
-	affect : identifier '<-' instruction 
-			{['AFFECT', $item[1], $item[3]]}
-			| identifier 'prend' 'la' 'valeur' instruction
-			{['AFFECT', $item[1], $item[5]]}
-
-	ALLOCATE : assign
-		|  affect
-
-	arguments : instruction "," arguments 
-					{['LIST_ARGUMENTS', $item[1], $item[3]]}
-					| instruction
-					{['LIST_ARGUMENTS', $item[1], ['NULL']]}
-
-	params : identifiant "," params
-			{['LIST_IDENTIFIERS', $item[1], $item[3]]}
-			| identifier
-			{['LIST_IDENTIFIERS', $item[1], ['NULL']]}
-			| #nothing
-			{['NULL']}
-
-	affiche : 'affiche' instruction 
-			{['AFFICHE', $item[2]]}
-
-	affichable : expression | code
-
-	inspect : 'inspecte' instruction
-			{['INSPECT', $item[2]]}
-
-	condition : 'si' expression 'alors' instructions 'sinon' instructions 'fin'
-			{['CONDITION', $item[2], $item[4], $item[6]]}
-			   |'si' expression 'alors' instructions 'fin'
-			{['CONDITION', $item[2], $item[4],['NULL']]}
-
-	bouclepour : 'pour' identifier '=' instruction "jusqu'a" instruction 'increment' instruction ':' instructions 'suivant'
-			{['BOUCLEPOUR', $item[2], $item[4], $item[6], $item[8], $item[10]]}
-				|'pour' identifier '=' instruction "jusqu'a" instruction ':' instructions 'suivant'
-			{['BOUCLEPOUR', $item[2], $item[4], $item[6], ['NUMERIC','1'], $item[8]]}
-
-	tantque : 'tant' 'que' expression ':' instructions 'fin'
-			{['TANTQUE', $item[3], $item[5]]}
-			| 'tant' 'que' expression  instructions 'fin'
-			{['TANTQUE', $item[3], $item[4]]}
-
-	pourchaque : 'pour' 'chaque' identifier 'de' instruction ':' instructions 'fin'
-		{['POURCHAQUE',$item[3],$item[5],$item[7]]}
-				|'pour' 'chaque' identifier 'de' instruction instructions 'fin'
-				{['POURCHAQUE',$item[3],$item[5],$item[6]]}
-				|'pour' 'chaque' identifier 'de' instruction instructions '.'
-				{['POURCHAQUE',$item[3],$item[5],$item[6]]}
-
-
-	allocates : ALLOCATE "," allocates
-			{['LIST_ALLOCATES', $item[1], $item[3]]}
-			| ALLOCATE 
-			{['LIST_ALLOCATES', $item[1], ['NULL']]}
-
-	pourcontext : 'pour' allocates ':' instructions 'fin'
-			{['POURCONTEXT', $item[2], $item[4]]}
-			|'pour' allocates instructions 'fin'
-			{['POURCONTEXT', $item[2], $item[3]]}
-			|'pour' allocates instructions '.'
-			{['POURCONTEXT', $item[2], $item[3]]}
-		
-	code : '{' instructions '}'
-		{$item[2]}
-
-	instructionnable: condition | bouclepour | tantque | pourcontext | pourchaque
-	
-	expression : expression_boolean 
-
-	instruction : inspect | condition | bouclepour | tantque | pourcontext| pourchaque | affiche| ALLOCATE | expression | code
-
-	instructions : instruction SEPARATOR instructions
-					{['LIST_INSTRUCTIONS', $item[1], $item[3]]}
-					| instruction
-					{['LIST_INSTRUCTIONS', $item[1], ['NULL']]}
-
-	SEPARATOR : ";"
-			
-	startrule : #<skip: qr/[^\S\n]/> #Ignore non-newline whitespace
-				instructions
-
-_EOGRAMMARNUM_
-
-
-
-#$Parse::RecDescent::skip = '[ \t]*';
-#$Parse::RecDescent::skip = '[^\S\n]*';
-my $parser = new Parse::RecDescent($grammarNum);
  
 ##############################################
 # On s'occupe du context !
@@ -361,7 +105,7 @@ sub Context_setParent{
 sub Context_get{
 	my $context = shift;
 	my $name    = shift;
-	return MakeAST_ERROR("N'est pas un context " . Dumper($context)) if(!EstCONTEXT($context));
+	return AST::ERROR("N'est pas un context " . Dumper($context)) if(!AST::EstCONTEXT($context));
 	my $value = $context->[1]->{$name};
 	if(defined $value){
 		#print "Context_get value:" . Dumper($value). "\n";
@@ -369,7 +113,7 @@ sub Context_get{
 	}else{
 		my $parent =$context->[2];
 		#print "Context_get value: indefinie\n";
-		if(EstCONTEXT($parent)){
+		if(AST::EstCONTEXT($parent)){
 			#print "Context_get value: parent est un context, on lui passe la main\n";
 			return Context_get($parent, $name);
 		}else{
@@ -387,13 +131,13 @@ sub Context_set{
 	my $name    = shift;
 	my $value   = shift;
 
-	return MakeAST_ERROR("N'est pas un context " . Dumper($context)) if(!EstCONTEXT($context));
+	return AST::ERROR("N'est pas un context " . Dumper($context)) if(!AST::EstCONTEXT($context));
 
 	if(defined $context->[1]->{$name}){
 		$context->[1]->{$name} = $value;
 	}else{
 		my $parent = $context->[2];
-		if(EstCONTEXT($parent)){
+		if(AST::EstCONTEXT($parent)){
 			Context_set($parent, $name, $value);
 		}else{
 			#On cree la variable !
@@ -407,7 +151,8 @@ sub Context_set{
 	# Vrais quelque soient ses arguments
 	sub MakeVRAI{
 		return sub{
-			return MakeAST_VRAI();
+			#return MakeAST_VRAI();
+			return AST::VRAI();
 		}
 	}
 
@@ -415,7 +160,8 @@ sub Context_set{
 	# Faux quelque soient ses arguments
 	sub MakeFAUX{
 		return sub{
-			return MakeAST_FAUX();
+			#return MakeAST_FAUX();
+			return AST::FAUX();
 		}
 	}
 
@@ -432,10 +178,13 @@ sub MakeNOT{
 		my $valeur = $porte->($values);
 		return undef if(!defined $valeur);
 		#return 0 if($valeur);
-		return $valeur if(EstUneERREUR($valeur));
-		return MakeAST_FAUX() if(EstVRAI($valeur));
-		return MakeAST_VRAI() if(EstFAUX ($valeur));
-		return MakeAST_ERROR("N'EST PAS UN BOOLEAN", $valeur);
+		#return $valeur if(EstUneERREUR($valeur));
+		return $valeur if(AST::EstUneERREUR($valeur));
+		#return MakeAST_FAUX() if(EstVRAI($valeur));
+		return AST::FAUX() if(AST::EstVRAI($valeur));
+		#return MakeAST_VRAI() if(EstFAUX ($valeur));
+		return AST::VRAI() if(AST::EstFAUX ($valeur));
+		return AST::ERROR("N'EST PAS UN BOOLEAN", $valeur);
 	}
 }
 sub MakeAND{
@@ -449,11 +198,11 @@ sub MakeAND{
 		foreach my $porte (@portes){
 			my $valeur = $porte->($values);
 			return undef if(!defined $valeur);
-			return $valeur if(EstUneERREUR($valeur));
-			return MakeAST_FAUX() if(EstFAUX($valeur));
+			return $valeur if(AST::EstUneERREUR($valeur));
+			return AST::FAUX() if(AST::EstFAUX($valeur));
 		}
 		# Aucune valeur n'est fausse!
-		return MakeAST_VRAI();
+		return AST::VRAI();
 	}
 }
 sub MakeOR{
@@ -467,11 +216,11 @@ sub MakeOR{
 		foreach my $porte (@portes){
 			my $valeur = $porte->($values);
 			return undef if(!defined $valeur);
-			return $valeur if(EstUneERREUR($valeur));
-			return MakeAST_VRAI() if(EstVRAI($valeur));
+			return $valeur if(AST::EstUneERREUR($valeur));
+			return AST::VRAI() if(AST::EstVRAI($valeur));
 		}
 		# Aucune valeur n'est vrai !
-		return MakeAST_FAUX();
+		return AST::FAUX();
 	}
 }
 sub MakeXOR{
@@ -492,237 +241,7 @@ sub MakeXOR{
 }
 
 
-##########################################
-# AST: Une reference de tableau
-# AST->[0] = Nom du Noeud
-# ########################################
 
-sub Est_de_TYPE{
-	my ($AST,$type) = @_;
-	return 1 if($AST->[0] eq $type);
-	return 0;
-}
-
-sub MakeAST_OR{
-	my ($val1, $val2) = @_;
-	# $val1 et $val2 sont aussi des AST
-	return ['OR', $val1, $val2];
-}
-
-sub MakeAST_AND{
-	my ($val1, $val2) = @_;
-	# $val1, $val2 sont aussi des AST
-	return ['AND', $val1, $val2];
-}
-
-sub MakeAST_XOR{
-	my ($val1, $val2) = @_;
-	# $val1, $val2 sont aussi des AST
-	return ['XOR', $val1, $val2];
-}
-
-sub MakeAST_NOT{
-	my $val = shift;
-	return ['NOT', $val];
-}
-
-sub MakeAST_VRAI{
-	return ['BOOLEAN','VRAI'];
-}
-sub EstVRAI{
-	my $value = shift;
-	return 1 if($value->[0] eq 'BOOLEAN' && $value->[1] eq 'VRAI');
-	return 0;
-}
-
-sub MakeAST_FAUX{
-	return ['BOOLEAN','FAUX'];
-}
-
-sub EstFAUX{
-	my $value = shift;
-	return 1 if($value->[0] eq 'BOOLEAN' && $value->[1] eq 'FAUX');
-	return 0;
-}
-
-sub EstNUMERIC{
-	my $value = shift;
-	return 1 if(Est_de_TYPE($value, 'NUMERIC'));
-	return 0;
-}
-
-sub EstBOOLEAN{
-	my $value = shift;
-	return 1 if(Est_de_TYPE($value, 'BOOLEAN'));
-	return 0;
-}
-
-sub EstID{
-	my $value = shift;
-	return 1 if(Est_de_TYPE($value, 'ID'));
-	return 0;
-}
-
-sub EstLAMBDA{
-	my $value = shift;
-	return 1 if(Est_de_TYPE($value, 'LAMBDA'));
-	return 0;
-}
-sub EstTABLO{
-	my $value = shift;
-	return 1 if(Est_de_TYPE($value, 'TABLO'));
-	return 0;
-}
-sub EstDEFTABLO{
-	my $value = shift;
-	return 1 if(Est_de_TYPE($value, 'DEFTABLO'));
-	return 0;
-}
-
-sub EstCONTEXT{
-	my $value = shift;
-	#return 0 unless(defined $value);#Un context null n'en est pas un
-	return 1 if(Est_de_TYPE($value, 'CONTEXT'));
-	return 0;
-}
-
-sub MakeAST_TABLO{
-	my $tablo = shift;
-	my $localFunc = sub{
-		my $action = shift;
-		return $tablo->[$action->[1]] if(EstNUMERIC($action));
-		return $tablo->[0] if(EstSTRING($action) && $action->[1] eq 'maillon');
-		if(EstSTRING($action) && $action->[1] eq 'suite'){
-			#return MakeAST_NUMERIC(0) if(!defined $tablo || $tablo == [] || scalar(@$tablo)==1);
-			return ['VOID'] if(!defined $tablo || $tablo == [] || scalar(@$tablo)==1);
-			my @newTab = @$tablo;
-			shift(@newTab);
-			return MakeAST_TABLO(\@newTab);
-		}
-		return MakeAST_ERROR("Methode ".$action->[1]." non definie sur les tableaux !");
-	};
-	return ['TABLO', $localFunc, $tablo];
-}
-
-sub MakeAST_ASSIGN{
-	my ($name, $value) = @_;
-	return ['ASSIGN', ['ID',$name], $value];
-}
-
-sub EstUneERREUR{
-	my $valeur = shift;
-	return 1 if($valeur->[0] eq 'ERROR');
-	return 0;
-}
-
-sub MakeAST_ERROR{
-	my $reason = shift;
-	my $where  = shift;
-	my $subError = shift;
-	return ['ERROR', $reason];
-}
-
-sub MakeAST_NULL{
-	return ['NULL'];
-}
-sub EstNULL{
-	my $valeur = shift;
-	return 0 if(ref $valeur ne 'ARRAY');
-	return 1 if($valeur->[0] eq 'NULL');
-	return 0;
-}
-sub EstVOID{
-	my $valeur = shift;
-	return 1 if($valeur->[0] eq 'VOID');
-	return 0;
-}
-sub EstNOTHING{
-	my $valeur = shift;
-	return 1 if($valeur->[0] eq 'NOTHING');
-	return 0;
-}
-sub EstLISTINSTRUCTIONS{
-	my $valeur = shift;
-	return 1 if($valeur->[0] eq 'LIST_INSTRUCTIONS');
-	return 0;
-}
-
-sub MakeAST_NUMERIC{
-	my $value = shift;
-	#Il faudrait verifier que $value
-	#soit bien un numeric !
-	return ['NUMERIC', $value];
-}
-
-sub MakeAST_STRING{
-	my $value = shift;
-	return ['STRING', $value];
-}
-
-sub EstSTRING{
-	my $valeur = shift;
-	return 1 if($valeur->[0] eq 'STRING');
-	return 0;
-}
-
-sub EstSTRINGQUOTE{
-	my $valeur = shift;
-	return 1 if($valeur->[0] eq 'STRINGQUOTE');
-	return 0;
-}
-
-sub MakeAST_LIST_VARIABLES{
-	my $context = shift;
-	my @keys = keys %$context;
-	my $makeList;
-	$makeList = sub{
-		my $clefs = shift;
-		if(@$clefs){
-			my $clef = pop @$clefs;
-			say "$clef";
-			my $value = $context->{$clef};
-			return ['LIST_INSTRUCTIONS', MakeAST_ASSIGN($clef,$value),
-				$makeList->($clefs)] if(@$clefs);
-			return ['LIST_INSTRUCTIONS', MakeAST_ASSIGN($clef,$value),
-				MakeAST_NULL()];
-		}else{
-			#Aucune variable n'est definie
-			return ['VOID'];
-		}
-	};
-	return $makeList->(\@keys);
-}
-
-sub MakeAST_ADD{
-	my ($lvalue, $rvalue)=@_;
-	return ['ADD', $lvalue, $rvalue];
-}
-sub MakeAST_SUBS{
-	my ($lvalue, $rvalue)=@_;
-	return ['SUBS', $lvalue, $rvalue];
-}
-sub MakeAST_MULT{
-	my ($lvalue, $rvalue)=@_;
-	return ['MULT', $lvalue, $rvalue];
-}
-sub MakeAST_DIV{
-	my ($lvalue, $rvalue)=@_;
-	return ['DIV', $lvalue, $rvalue];
-}
-sub MakeAST_INTERNALFUNC{
-	my $func = shift;
-	return ['INTERNALFUNC', $func];
-}
-sub getINTERNALFUNC{
-	my $func = shift;
-	return $func->[1] if($func->[0] eq 'INTERNALFUNC');
-	return MakeAST_ERROR("N'est pas une fonction interne " . $func->[0]);
-}
-sub EstINTERNALFUNC{
-	my $valeur = shift;
-	return 1 if($valeur->[0] eq 'INTERNALFUNC');
-	return 0;
-}
 #On enleve les elements NOTHING
 #des AST
 sub RemoveNOTHING{
@@ -758,7 +277,7 @@ sub RemoveNOTHING{
 	if($nbElem ==3){
 		my $ast2 = RemoveNOTHING($AST->[2], $deep+1);
 		my $ast1 = RemoveNOTHING($AST->[1], $deep+1);
-		return $ast1 if(EstNOTHING($ast2));
+		return $ast1 if(AST::EstNOTHING($ast2));
 		return [$AST->[0], $ast1, $ast2];
 	}
 	print "DANS RemoveNOTHING: AST $name inconnu\n";
@@ -818,8 +337,8 @@ sub MakeSUB_AST_ERROR{
 	return sub{
 		my $astName = $AST->[0];
 		#print "ERREUR DANS ERROR:" . Dumper($AST);
-		return MakeAST_ERROR("AST $astName inconnu") if($astName);
-		return MakeAST_ERROR("SYNTAX ERROR");
+		return AST::ERROR("AST $astName inconnu") if($astName);
+		return AST::ERROR("SYNTAX ERROR");
 	}
 }
 # ERREUR NON CATCHEE !!
@@ -828,8 +347,9 @@ sub MakeSUB_ERROR{
 	my $AST = shift;
 	return sub{
 		my $astName = $AST->[0];
-		return MakeAST_ERROR("ERREUR NON CATCHEE: AST $astName inconnu") if($astName);
-		return MakeAST_ERROR("ERREUR NON CATCHEE: SYNTAX ERROR");
+		#return AST::ERROR("ERREUR NON CATCHEE: AST $astName inconnu") if($astName);
+		return $AST if($astName);
+		return AST::ERROR("ERREUR NON CATCHEE: SYNTAX ERROR");
 	}
 }
 
@@ -842,7 +362,7 @@ sub MakeSUB_INSPECT{
 			print "DEEPER: ";
 			my $name = $AST->[1]->[1];
 			my $value = Context_get($context, $name);
-			if(EstLAMBDA($value)){
+			if(AST::EstLAMBDA($value)){
 				print Dumper($value->[2]);
 			}else{
 				print Dumper($value);
@@ -885,14 +405,16 @@ sub MakeSUB_NOT{
 sub MakeSUB_VRAI{
 	my $AST = shift;
 	return sub{
-		MakeAST_VRAI();
+		#MakeAST_VRAI();
+		AST::VRAI();
 	}
 }
 
 sub MakeSUB_FAUX{
 	my $AST = shift;
 	return sub{
-		MakeAST_FAUX();
+		#MakeAST_FAUX();
+		AST::FAUX();
 	}
 }
 
@@ -913,7 +435,7 @@ sub MakeSUB_NOTHING{
 sub MakeSUB_NUMERIC{
 	my $AST = shift;
 	return sub{
-		MakeAST_NUMERIC($AST->[1]);
+		AST::NUMERIC($AST->[1]);
 	}
 }
 
@@ -929,14 +451,14 @@ sub MakeSUB_STRINGQUOTE{
 	my $string = $AST->[1];
 	$string =~ s/^\"(.*)\"$/$1/;
 	return sub{
-		MakeAST_STRING($string);
+		AST::STRING($string);
 	}
 }
 
 sub MakeSUB_STRING{
 	my $AST = shift;
 	return sub{
-		MakeAST_STRING($AST->[1]);
+		AST::STRING($AST->[1]);
 	}
 }
 sub MakeSUB_INPUT{
@@ -944,8 +466,8 @@ sub MakeSUB_INPUT{
 	return sub{
 		my $input=<>;
 		chomp($input);
-		return MakeAST_NUMERIC($input) if($input =~ /^\s*(\+|\-)?\d+(\.(\d+))*\s*$/);
-		return MakeAST_STRING($input);
+		return AST::NUMERIC($input) if($input =~ /^\s*(\+|\-)?\d+(\.(\d+))*\s*$/);
+		return AST::STRING($input);
 	}
 }
 
@@ -964,11 +486,12 @@ sub MakeSUB_ADD{
 		foreach my $valeur ($lvalue, $rvalue){
 			#my $valeur = $porte->($values);
 			return undef if(!defined $valeur);
-			return $valeur if(EstUneERREUR($valeur));
-			return MakeAST_VRAI() if(EstVRAI($valeur));
+			return $valeur if(AST::EstUneERREUR($valeur));
+			#return MakeAST_VRAI() if(EstVRAI($valeur));
+			return AST::VRAI() if(AST::EstVRAI($valeur));
 		}
 		# Aucune valeur n'est vrai !
-		return MakeAST_FAUX();
+		return AST::FAUX();
 	};
 	my $lambda = sub{
 		my $context = shift;
@@ -984,44 +507,43 @@ sub MakeSUB_ADD{
 		my $context = shift;
 		my $lvalue  = shift;
 		my $rvalue  = shift;
-		return MakeAST_NUMERIC($lvalue->[1] + $rvalue->[1]);
+		return AST::NUMERIC($lvalue->[1] + $rvalue->[1]);
 	};
 
 	return sub{
 		my $context = shift;
 		my $lvalue = $sub_l->($context);
-		return $lvalue if(EstUneERREUR($lvalue));
+		return $lvalue if(AST::EstUneERREUR($lvalue));
 		my $rvalue = $sub_r->($context);
-		return $lvalue if(EstNOTHING($rvalue));
-		return $rvalue if(EstUneERREUR($rvalue));
-		return $numerique->($context,$lvalue,$rvalue) if(EstNUMERIC($lvalue)&& EstNUMERIC($rvalue));
-		return $logique->($context,$lvalue,$rvalue)if(EstBOOLEAN($lvalue)&& EstBOOLEAN($rvalue));
-		#return ConcateneSTRING($context,$lvalue,$rvalue)if(EstSTRING($lvalue) || EstSTRING($rvalue));
-		return OperateurSurTABLO($context,$lvalue,$rvalue, \&MakeAST_ADD)if(EstTABLO($lvalue) && EstTABLO($rvalue));
-		if(EstTABLO($lvalue) || EstTABLO($rvalue)){
+		return $lvalue if(AST::EstNOTHING($rvalue));
+		return $rvalue if(AST::EstUneERREUR($rvalue));
+		return $numerique->($context,$lvalue,$rvalue) if(AST::EstNUMERIC($lvalue)&& AST::EstNUMERIC($rvalue));
+		return $logique->($context,$lvalue,$rvalue)if(AST::EstBOOLEAN($lvalue)&& AST::EstBOOLEAN($rvalue));
+		return OperateurSurTABLO($context,$lvalue,$rvalue, \&AST::ADD)if(AST::EstTABLO($lvalue) && AST::EstTABLO($rvalue));
+		if(AST::EstTABLO($lvalue) || AST::EstTABLO($rvalue)){
 			my $operande;
 			my $tablo;
 			my $action;
-			if(EstTABLO($lvalue)){
+			if(AST::EstTABLO($lvalue)){
 				$operande = $rvalue;
 				$tablo    = $lvalue;
 				$action   = sub{
 					my $element = shift;
-					return MakeAST_ADD($element,$operande);
+					return AST::ADD($element,$operande);
 				};
 			}else{
 				$operande = $lvalue;
 				$tablo    = $rvalue;
 				$action   = sub{
 					my $element = shift;
-					return MakeAST_ADD($operande, $element);
+					return AST::ADD($operande, $element);
 				};
 			}
 			return ActionSurChaqueElementDuTABLO($context,$tablo,$action);
 		}
-		return ConcateneSTRING($context,$lvalue,$rvalue)if(EstSTRING($lvalue) || EstSTRING($rvalue));
+		return ConcateneSTRING($context,$lvalue,$rvalue)if(AST::EstSTRING($lvalue) || AST::EstSTRING($rvalue));
 		#return $rvalue;
-		return MakeAST_ERROR("SYNTAX ERROR: ne peut pas additionner ces 2 types");
+		return AST::ERROR("SYNTAX ERROR: ne peut pas additionner ces 2 types");
 	}
 }
 
@@ -1029,9 +551,9 @@ sub ConcateneSTRING{
 	my $context = shift;
 	my $lvalue  = shift;
 	my $rvalue  = shift;
-	return $lvalue if(EstVOID($rvalue));
-	return $rvalue if(EstVOID($lvalue));
-	return MakeAST_STRING($lvalue->[1] . $rvalue->[1]);
+	return $lvalue if(AST::EstVOID($rvalue));
+	return $rvalue if(AST::EstVOID($lvalue));
+	return AST::STRING($lvalue->[1] . $rvalue->[1]);
 }
 sub ActionSurChaqueElementDuTABLO{
 	my $context = shift;
@@ -1044,7 +566,7 @@ sub ActionSurChaqueElementDuTABLO{
 		my $value = MakeSUB($ast)->($context);
 		push(@newTab, $value);
 	}
-	return MakeAST_TABLO(\@newTab);
+	return AST::TABLO(\@newTab);
 }
 sub OperateurSurTABLO{
 	my $context = shift;
@@ -1083,7 +605,7 @@ sub OperateurSurTABLO{
 		}
 		push(@newTab, $ASTValue);
 	}
-	return MakeAST_TABLO(\@newTab);
+	return AST::TABLO(\@newTab);
 }
 sub ConcateneTABLO{
 	my $context = shift;
@@ -1092,7 +614,7 @@ sub ConcateneTABLO{
 	my $ltab = $lvalue->[2];
 	my $rtab = $rvalue->[2];
 	my @newTab = (@$ltab,@$rtab);
-	return MakeAST_TABLO(\@newTab);
+	return AST::TABLO(\@newTab);
 }
 sub MakeSUB_CONCATENE{
 	my $AST = shift;
@@ -1115,23 +637,23 @@ sub MakeSUB_CONCATENE{
 		my $context = shift;
 		my $lvalue  = shift;
 		my $rvalue  = shift;
-		return MakeAST_STRING($lvalue->[1] . $rvalue->[1]);
+		return AST::STRING($lvalue->[1] . $rvalue->[1]);
 	};
 	
 	return sub{
 		my $context = shift;
 		my $lvalue = $sub_l->($context);
-		return $lvalue if(EstUneERREUR($lvalue));
+		return $lvalue if(AST::EstUneERREUR($lvalue));
 		my $rvalue = $sub_r->($context);
-		return $lvalue if(EstNOTHING($rvalue));
-		return $rvalue if(EstUneERREUR($rvalue));
-		return $lvalue if(EstVOID($rvalue));
-		return $rvalue if(EstVOID($lvalue));
-		return $numerique->($context,$lvalue,$rvalue) if(EstNUMERIC($lvalue)&& EstNUMERIC($rvalue));
-		return ConcateneTABLO($context,$lvalue,$rvalue)if(EstTABLO($lvalue) && EstTABLO($rvalue));
+		return $lvalue if(AST::EstNOTHING($rvalue));
+		return $rvalue if(AST::EstUneERREUR($rvalue));
+		return $lvalue if(AST::EstVOID($rvalue));
+		return $rvalue if(AST::EstVOID($lvalue));
+		return $numerique->($context,$lvalue,$rvalue) if(AST::EstNUMERIC($lvalue)&& AST::EstNUMERIC($rvalue));
+		return ConcateneTABLO($context,$lvalue,$rvalue)if(AST::EstTABLO($lvalue) && AST::EstTABLO($rvalue));
 
-		return ConcateneSTRING($context,$lvalue,$rvalue)if(EstSTRING($lvalue) || EstSTRING($rvalue));
-		return MakeAST_ERROR("SYNTAX ERROR: ne peut pas concatener ces 2 types");
+		return ConcateneSTRING($context,$lvalue,$rvalue)if(AST::EstSTRING($lvalue) || AST::EstSTRING($rvalue));
+		return AST::ERROR("SYNTAX ERROR: ne peut pas concatener ces 2 types");
 	}
 }
 sub MakeSUB_SUBS{
@@ -1149,8 +671,9 @@ sub MakeSUB_SUBS{
 		foreach my $valeur ($lvalue, $rvalue){
 			#my $valeur = $porte->($values);
 			return undef if(!defined $valeur);
-			return $valeur if(EstUneERREUR($valeur));
-			return MakeAST_VRAI() if(EstVRAI($valeur));
+			return $valeur if(AST::EstUneERREUR($valeur));
+			#return MakeAST_VRAI() if(EstVRAI($valeur));
+			return AST::VRAI() if(AST::EstVRAI($valeur));
 		}
 		# Aucune valeur n'est vrai !
 		return MakeAST_FAUX();
@@ -1159,40 +682,40 @@ sub MakeSUB_SUBS{
 		my $context = shift;
 		my $lvalue  = shift;
 		my $rvalue  = shift;
-		return MakeAST_NUMERIC($lvalue->[1] - $rvalue->[1]);
+		return AST::NUMERIC($lvalue->[1] - $rvalue->[1]);
 	};
 	return sub{
 		my $context = shift;
 		my $lvalue = $sub_l->($context);
-		return $lvalue if(EstUneERREUR($lvalue));
+		return $lvalue if(AST::EstUneERREUR($lvalue));
 		my $rvalue = $sub_r->($context);
-		return $lvalue if(EstNOTHING($rvalue));
-		return $rvalue if(EstUneERREUR($rvalue));
-		return $numerique->($context,$lvalue,$rvalue) if(EstNUMERIC($lvalue)&& EstNUMERIC($rvalue));
-		return $logique->($context,$lvalue,$rvalue)if(EstBOOLEAN($lvalue)&& EstBOOLEAN($rvalue));
-		return OperateurSurTABLO($context,$lvalue,$rvalue, \&MakeAST_SUBS)if(EstTABLO($lvalue) && EstTABLO($rvalue));
-		if(EstTABLO($lvalue) || EstTABLO($rvalue)){
+		return $lvalue if(AST::EstNOTHING($rvalue));
+		return $rvalue if(AST::EstUneERREUR($rvalue));
+		return $numerique->($context,$lvalue,$rvalue) if(AST::EstNUMERIC($lvalue)&& AST::EstNUMERIC($rvalue));
+		return $logique->($context,$lvalue,$rvalue)if(AST::EstBOOLEAN($lvalue)&& AST::EstBOOLEAN($rvalue));
+		return OperateurSurTABLO($context,$lvalue,$rvalue, \&AST::SUBS)if(AST::EstTABLO($lvalue) && AST::EstTABLO($rvalue));
+		if(AST::EstTABLO($lvalue) || AST::EstTABLO($rvalue)){
 			my $operande;
 			my $tablo;
 			my $action;
-			if(EstTABLO($lvalue)){
+			if(AST::EstTABLO($lvalue)){
 				$operande = $rvalue;
 				$tablo    = $lvalue;
 				$action   = sub{
 					my $element = shift;
-					return MakeAST_SUBS($element,$operande);
+					return AST::SUBS($element,$operande);
 				};
 			}else{
 				$operande = $lvalue;
 				$tablo    = $rvalue;
 				$action   = sub{
 					my $element = shift;
-					return MakeAST_SUBS($operande, $element);
+					return AST::SUBS($operande, $element);
 				};
 			}
 			return ActionSurChaqueElementDuTABLO($context,$tablo,$action);
 		}
-		return MakeAST_ERROR("SYNTAX ERROR: ne peut pas soustraire ces 2 types");
+		return AST::ERROR("SYNTAX ERROR: ne peut pas soustraire ces 2 types");
 	}
 }
 
@@ -1211,17 +734,18 @@ sub MakeSUB_MULT{
 		foreach my $valeur ($lvalue, $rvalue){
 			#my $valeur = $porte->($values);
 			return undef if(!defined $valeur);
-			return $valeur if(EstUneERREUR($valeur));
-			return MakeAST_VRAI() if(EstVRAI($valeur));
+			return $valeur if(AST::EstUneERREUR($valeur));
+			#return MakeAST_VRAI() if(EstVRAI($valeur));
+			return AST::VRAI() if(AST::EstVRAI($valeur));
 		}
 		# Aucune valeur n'est vrai !
-		return MakeAST_FAUX();
+		return AST::FAUX();
 	};
 	my $numerique = sub{
 		my $context = shift;
 		my $lvalue  = shift;
 		my $rvalue  = shift;
-		return MakeAST_NUMERIC($lvalue->[1] * $rvalue->[1]);
+		return AST::NUMERIC($lvalue->[1] * $rvalue->[1]);
 	};
 	my $string = sub{
 		my $context = shift;
@@ -1229,47 +753,47 @@ sub MakeSUB_MULT{
 		my $rvalue  = shift;
 		my $val = $lvalue->[1];
 		my $str = $rvalue->[1];
-		return MakeAST_STRING("") if($val == 0);
+		return AST::STRING("") if($val == 0);
 		my $accu = "";
 		foreach my $i (1..$val){
 			$accu .= $str;
 		}
-		return MakeAST_STRING($accu);
+		return AST::STRING($accu);
 	};
 	return sub{
 		my $context = shift;
 		my $lvalue = $sub_l->($context);
-		return $lvalue if(EstUneERREUR($lvalue));
+		return $lvalue if(AST::EstUneERREUR($lvalue));
 		my $rvalue = $sub_r->($context);
-		return $lvalue if(EstNOTHING($rvalue));
-		return $rvalue if(EstUneERREUR($rvalue));
-		return $numerique->($context,$lvalue,$rvalue) if(EstNUMERIC($lvalue)&& EstNUMERIC($rvalue));
-		return $logique->($context,$lvalue,$rvalue)if(EstBOOLEAN($lvalue)&& EstBOOLEAN($rvalue));
-		return $string->($context,$lvalue,$rvalue)if(EstNUMERIC($lvalue)&& EstSTRING($rvalue));
-		return $string->($context,$rvalue,$lvalue)if(EstNUMERIC($rvalue)&& EstSTRING($lvalue));
-		return OperateurSurTABLO($context,$lvalue,$rvalue, \&MakeAST_MULT)if(EstTABLO($lvalue) && EstTABLO($rvalue));
-		if(EstTABLO($lvalue) || EstTABLO($rvalue)){
+		return $lvalue if(AST::EstNOTHING($rvalue));
+		return $rvalue if(AST::EstUneERREUR($rvalue));
+		return $numerique->($context,$lvalue,$rvalue) if(AST::EstNUMERIC($lvalue)&& AST::EstNUMERIC($rvalue));
+		return $logique->($context,$lvalue,$rvalue)if(AST::EstBOOLEAN($lvalue)&& AST::EstBOOLEAN($rvalue));
+		return $string->($context,$lvalue,$rvalue)if(AST::EstNUMERIC($lvalue)&& AST::EstSTRING($rvalue));
+		return $string->($context,$rvalue,$lvalue)if(AST::EstNUMERIC($rvalue)&& AST::EstSTRING($lvalue));
+		return OperateurSurTABLO($context,$lvalue,$rvalue, \&AST::MULT)if(AST::EstTABLO($lvalue) && AST::EstTABLO($rvalue));
+		if(AST::EstTABLO($lvalue) || AST::EstTABLO($rvalue)){
 			my $operande;
 			my $tablo;
 			my $action;
-			if(EstTABLO($lvalue)){
+			if(AST::EstTABLO($lvalue)){
 				$operande = $rvalue;
 				$tablo    = $lvalue;
 				$action   = sub{
 					my $element = shift;
-					return MakeAST_MULT($element,$operande);
+					return AST::MULT($element,$operande);
 				};
 			}else{
 				$operande = $lvalue;
 				$tablo    = $rvalue;
 				$action   = sub{
 					my $element = shift;
-					return MakeAST_MULT($operande, $element);
+					return AST::MULT($operande, $element);
 				};
 			}
 			return ActionSurChaqueElementDuTABLO($context,$tablo,$action);
 		}
-		return MakeAST_ERROR("SYNTAX ERROR: ne peut pas multiplier ces 2 types");
+		return AST::ERROR("SYNTAX ERROR: ne peut pas multiplier ces 2 types");
 	}
 }
 
@@ -1286,51 +810,52 @@ sub MakeSUB_DIV{
 		my $rvalue  = shift;
 		foreach my $valeur ($lvalue, $rvalue){
 			return undef if(!defined $valeur);
-			return $valeur if(EstUneERREUR($valeur));
-			return MakeAST_VRAI() if(EstVRAI($valeur));
+			return $valeur if(AST::EstUneERREUR($valeur));
+			#return MakeAST_VRAI() if(EstVRAI($valeur));
+			return AST::VRAI() if(AST::EstVRAI($valeur));
 		}
 		# Aucune valeur n'est vrai !
-		return MakeAST_FAUX();
+		return AST::FAUX();
 	};
 	my $numerique = sub{
 		my $context = shift;
 		my $lvalue  = shift;
 		my $rvalue  = shift;
-		return MakeAST_ERROR("Division par zero") if($rvalue->[1] == 0);
-		return MakeAST_NUMERIC($lvalue->[1] / $rvalue->[1]);
+		return AST::ERROR("Division par zero") if($rvalue->[1] == 0);
+		return AST::NUMERIC($lvalue->[1] / $rvalue->[1]);
 	};
 	return sub{
 		my $context = shift;
 		my $lvalue = $sub_l->($context);
-		return $lvalue if(EstUneERREUR($lvalue));
+		return $lvalue if(AST::EstUneERREUR($lvalue));
 		my $rvalue = $sub_r->($context);
-		return $lvalue if(EstNOTHING($rvalue));
-		return $rvalue if(EstUneERREUR($rvalue));
-		return $numerique->($context,$lvalue,$rvalue) if(EstNUMERIC($lvalue)&& EstNUMERIC($rvalue));
-		return $logique->($context,$lvalue,$rvalue)if(EstBOOLEAN($lvalue)&& EstBOOLEAN($rvalue));
-		return OperateurSurTABLO($context,$lvalue,$rvalue, \&MakeAST_DIV)if(EstTABLO($lvalue) && EstTABLO($rvalue));
-		if(EstTABLO($lvalue) || EstTABLO($rvalue)){
+		return $lvalue if(AST::EstNOTHING($rvalue));
+		return $rvalue if(AST::EstUneERREUR($rvalue));
+		return $numerique->($context,$lvalue,$rvalue) if(AST::EstNUMERIC($lvalue)&& AST::EstNUMERIC($rvalue));
+		return $logique->($context,$lvalue,$rvalue)if(AST::EstBOOLEAN($lvalue)&& AST::EstBOOLEAN($rvalue));
+		return OperateurSurTABLO($context,$lvalue,$rvalue, \&AST::DIV)if(AST::EstTABLO($lvalue) && AST::EstTABLO($rvalue));
+		if(AST::EstTABLO($lvalue) || AST::EstTABLO($rvalue)){
 			my $operande;
 			my $tablo;
 			my $action;
-			if(EstTABLO($lvalue)){
+			if(AST::EstTABLO($lvalue)){
 				$operande = $rvalue;
 				$tablo    = $lvalue;
 				$action   = sub{
 					my $element = shift;
-					return MakeAST_DIV($element,$operande);
+					return AST::DIV($element,$operande);
 				};
 			}else{
 				$operande = $lvalue;
 				$tablo    = $rvalue;
 				$action   = sub{
 					my $element = shift;
-					return MakeAST_DIV($operande, $element);
+					return AST::DIV($operande, $element);
 				};
 			}
 			return ActionSurChaqueElementDuTABLO($context,$tablo,$action);
 		}
-		return MakeAST_ERROR("SYNTAX ERROR: ne peut pas diviser ces 2 types");
+		return AST::ERROR("SYNTAX ERROR: ne peut pas diviser ces 2 types");
 	}
 } 
 
@@ -1343,7 +868,7 @@ sub MakeSUB_AFFECT{
 		my $AST_VALUE = $AST->[2];
 		my $var_name = $AST_ID->[1];
 		my $retour = MakeSUB($AST_VALUE)->($context);
-		return $retour if(EstUneERREUR($retour));
+		return $retour if(AST::EstUneERREUR($retour));
 		Context_set($context, $var_name, $retour);
 		return ['VOID'];
 	}
@@ -1371,9 +896,9 @@ sub MakeSUB_ID{
 	return sub{
 		my $context = shift;
 		my $name = $id->[1];
-		return MakeAST_LIST_VARIABLES($context) if($name eq 'CONTEXT');
+		return AST::LIST_VARIABLES($context) if($name eq 'CONTEXT');
 		my $localAST = Context_get($context, $name);
-		return MakeAST_ERROR("VARIABLE $name NON DEFINIE") if(!defined $localAST);
+		return AST::ERROR("VARIABLE $name NON DEFINIE") if(!defined $localAST);
 		return MakeSUB($localAST)->($context);
 	}
 }
@@ -1384,16 +909,16 @@ sub MakeSUB_AFFICHE{
 		my $context = shift;
 		my $expression = $AST->[1];
 		my $valeur = MakeSUB($expression)->($context);
-		return $valeur if(EstUneERREUR($valeur));
+		return $valeur if(AST::EstUneERREUR($valeur));
 		#ATTENTION il faut verifier les type !!!!
 		if(scalar(@$valeur) == 1){
-			if(EstVOID($valeur)){
+			if(AST::EstVOID($valeur)){
 				print "\n";
 			}else{
 				print $valeur->[0] . "\n";
 			}
 		}else{
-			if(EstTABLO($valeur)){
+			if(AST::EstTABLO($valeur)){
 				affiche_TABLO($context, $valeur);
 				print "\n";
 			}else{
@@ -1421,16 +946,16 @@ sub tab2String{
 	for(my $i=0; $i<$longueur; $i++){
 		my $valeur = MakeSUB($tab->[$i])->($context);
 		if(scalar(@$valeur) == 1){
-			if(EstVOID($valeur)){
+			if(AST::EstVOID($valeur)){
 				$accu .= "[]";
 			}else{
 				$accu .= $valeur->[0];
 			}
 		}else{
-			if(EstTABLO($valeur)){
+			if(AST::EstTABLO($valeur)){
 				$accu .= tab2String($context, $valeur);
 			}else{
-				if(EstSTRING($valeur)){
+				if(AST::EstSTRING($valeur)){
 					# On ajoute les " pour du texte
 					$accu .= '"' . $valeur->[1] . '"';
 				}else{
@@ -1449,13 +974,14 @@ sub MakeSUB_STRICTSUP{
 		my $AST_L = $AST->[1];
 		my $AST_R = $AST->[2];
 		my $lhs = MakeSUB($AST_L)->($context);
-		return $lhs if(EstUneERREUR($lhs));
+		return $lhs if(AST::EstUneERREUR($lhs));
 		my $rhs = MakeSUB($AST_R)->($context);
-		return $rhs if(EstUneERREUR($rhs));
-		return $lhs if(EstNOTHING($rhs));
+		return $rhs if(AST::EstUneERREUR($rhs));
+		return $lhs if(AST::EstNOTHING($rhs));
 		#ATTENTION il faut verifier que les types soient valables !
-		return MakeAST_VRAI() if($lhs->[1] > $rhs->[1]);
-		return MakeAST_FAUX;
+		#return MakeAST_VRAI() if($lhs->[1] > $rhs->[1]);
+		return AST::VRAI() if($lhs->[1] > $rhs->[1]);
+		return AST::FAUX;
 	}
 }
 sub MakeSUB_EQUALITE{
@@ -1465,17 +991,17 @@ sub MakeSUB_EQUALITE{
 		my $AST_L = $AST->[1];
 		my $AST_R = $AST->[2];
 		my $lhs = MakeSUB($AST_L)->($context);
-		return $lhs if(EstUneERREUR($lhs));
+		return $lhs if(AST::EstUneERREUR($lhs));
 		my $rhs = MakeSUB($AST_R)->($context);
-		return $rhs if(EstUneERREUR($rhs));
-		return $lhs if(EstNOTHING($rhs));
+		return $rhs if(AST::EstUneERREUR($rhs));
+		return $lhs if(AST::EstNOTHING($rhs));
 		#ATTENTION il faut verifier que les types soient valables !
-		return MakeAST_VRAI() if(EstVOID($lhs) && EstVOID($rhs));
-		return MakeAST_VRAI() if(EstVOID($lhs) && EstSTRING($rhs) && $rhs->[1] eq '');
-		return MakeAST_VRAI() if(EstVOID($rhs) && EstSTRING($lhs) && $lhs->[1] eq '');
-		return MakeAST_FAUX if(EstVOID($lhs) || EstVOID($rhs));
-		return MakeAST_VRAI() if($lhs->[1] eq $rhs->[1]);
-		return MakeAST_FAUX;
+		return AST::VRAI() if(AST::EstVOID($lhs) && AST::EstVOID($rhs));
+		return AST::VRAI() if(AST::EstVOID($lhs) && AST::EstSTRING($rhs) && $rhs->[1] eq '');
+		return AST::VRAI() if(AST::EstVOID($rhs) && AST::EstSTRING($lhs) && $lhs->[1] eq '');
+		return AST::FAUX if(AST::EstVOID($lhs) || AST::EstVOID($rhs));
+		return AST::VRAI() if($lhs->[1] eq $rhs->[1]);
+		return AST::FAUX;
 	}
 }
 sub MakeSUB_CONDITION{
@@ -1486,11 +1012,11 @@ sub MakeSUB_CONDITION{
 		my $alors     = $AST->[2];
 		my $sinon     = $AST->[3];
 		my $si = MakeSUB($condition)->($context);
-		return $si if(EstUneERREUR($si));
-		if(EstVRAI($si)){
+		return $si if(AST::EstUneERREUR($si));
+		if(AST::EstVRAI($si)){
 			return MakeSUB($alors)->($context);
 		}else{
-			unless(EstNULL($sinon)){
+			unless(AST::EstNULL($sinon)){
 				return MakeSUB($sinon)->($context);
 			}else{
 				return ['VOID'];
@@ -1507,8 +1033,8 @@ sub MakeSUB_TANTQUE{
 		my $resultat = ['VOID'];
 		while(1){
 			my $validite = MakeSUB($condition)->($context);
-			return $validite if(EstUneERREUR($validite));
-			if(EstVRAI($validite)){
+			return $validite if(AST::EstUneERREUR($validite));
+			if(AST::EstVRAI($validite)){
 				$resultat = MakeSUB($instructions)->($context);
 			}else{
 				return $resultat;
@@ -1525,7 +1051,7 @@ sub LIST_ACTION{
 	my $next   = MakeIterator_LIST($list);
 	while(1){
 		my $element = $next->();
-		last if(EstNULL($element));
+		last if(AST::EstNULL($element));
 		$action->($element);
 	}
 }
@@ -1534,8 +1060,8 @@ sub LIST_ACTION{
 sub MakeIterator_LIST{
 	my $liste = shift;
 	return sub{
-		return $liste if(EstNULL($liste));
-		return MakeAST_ERROR($liste->[0]." n'est pas une liste !") if($liste->[0] !~ /^LIST_/);
+		return $liste if(AST::EstNULL($liste));
+		return AST::ERROR($liste->[0]." n'est pas une liste !") if($liste->[0] !~ /^LIST_/);
 		my $element = $liste->[1];
 		$liste = $liste->[2];
 		return $element;
@@ -1550,9 +1076,9 @@ sub MakeSUB_LIST_INSTRUCTIONS{
 		my $retour = MakeSUB($Instruction)->($context);
 
 		# Si c'est une erreur, on coupe le flux du programme
-		return $retour if(EstUneERREUR($retour));
+		return $retour if(AST::EstUneERREUR($retour));
 
-		return $retour if(EstNULL($CDR));#il n'y a pas d'instructions suivantes
+		return $retour if(AST::EstNULL($CDR));#il n'y a pas d'instructions suivantes
 		return MakeSUB($CDR)->($context);#on execute l'instruction suivante
 	}
 }
@@ -1589,23 +1115,23 @@ sub MakeSUB_DEFRANGE{
 		my $context = shift;
 		my $tab = [];
 		my $val1 = MakeSUB($premier)->($context);
-		return $val1 if(EstUneERREUR($val1));
-		return MakeAST_ERROR("Le premier parametre de la definition de la range n'est pas numerique !") if(!EstNUMERIC($val1));
+		return $val1 if(AST::EstUneERREUR($val1));
+		return AST::ERROR("Le premier parametre de la definition de la range n'est pas numerique !") if(!AST::EstNUMERIC($val1));
 		my $val2 = MakeSUB($second)->($context);
-		return $val2 if(EstUneERREUR($val2));
-		return MakeAST_ERROR("Le second parametre de la definition de la range n'est pas numerique !") if(!EstNUMERIC($val2));
+		return $val2 if(AST::EstUneERREUR($val2));
+		return AST::ERROR("Le second parametre de la definition de la range n'est pas numerique !") if(!AST::EstNUMERIC($val2));
 		my $debut = $val1->[1];
 		my $fin   = $val2->[1];
 		if($debut <= $fin){
 			for(my $i=$debut;$i<= $fin;$i++){
-				push(@$tab, MakeAST_NUMERIC($i));
+				push(@$tab, AST::NUMERIC($i));
 			}
 		}else{
 			for(my $i=$debut;$i>= $fin;$i--){
-				push(@$tab, MakeAST_NUMERIC($i));
+				push(@$tab, AST::NUMERIC($i));
 			}
 		}
-		return MakeAST_TABLO($tab);
+		return AST::MakeAST_TABLO($tab);
 	}
 }
 sub MakeSUB_DEFTABLO{
@@ -1614,19 +1140,19 @@ sub MakeSUB_DEFTABLO{
 	return sub{
 		my $context = shift;
 		my $tab = [];
-		return ['VOID'] if(EstVOID($parameters));
+		return ['VOID'] if(AST::EstVOID($parameters));
 		my $nextArgument = MakeIterator_LIST($parameters);
 		while(1){
 			my $currentArgument = $nextArgument->();
-			last if(EstNULL($currentArgument));
+			last if(AST::EstNULL($currentArgument));
 			
 			# On calcul les arguments comme des gloutons
 			my $valeur = MakeSUB($currentArgument)->($context);
-			return $valeur if(EstUneERREUR($valeur));
+			return $valeur if(AST::EstUneERREUR($valeur));
 			push(@$tab, $valeur);
 		}
 		# Rappel la taille de @$tab est scalar(@$tab) !!!
-		return MakeAST_TABLO($tab);
+		return AST::TABLO($tab);
 	}
 }
 
@@ -1655,19 +1181,19 @@ sub internal_EFFACE{
 }
 
 sub internal_GETMAXX{
-	return MakeAST_NUMERIC(getmaxx());
+	return AST::NUMERIC(getmaxx());
 }
 
 sub internal_GETMAXY{
-	return MakeAST_NUMERIC(getmaxy());
+	return AST::NUMERIC(getmaxy());
 }
 
 sub internal_POS{
 	my $context = shift;
 	my $valeur = shift;
 	my $valeur2= shift;
-	return MakeAST_ERROR("Le premier parametre de la fonction 'pos' n'est pas numerique !") if(!EstNUMERIC($valeur));
-	return MakeAST_ERROR("Le second parametre de la fonction 'pos' n'est pas numerique !") if(!EstNUMERIC($valeur2));
+	return AST::ERROR("Le premier parametre de la fonction 'pos' n'est pas numerique !") if(!AST::EstNUMERIC($valeur));
+	return AST::ERROR("Le second parametre de la fonction 'pos' n'est pas numerique !") if(!AST::EstNUMERIC($valeur2));
 	my $x = $valeur->[1];
 	my $y = $valeur2->[1];
 	move($y,$x);
@@ -1682,7 +1208,7 @@ sub internal_RAFRAICHIS{
 sub internal_MODE{
 	my $context = shift;
 	my $valeur = shift;
-	return MakeAST_ERROR("N'est pas du texte, pour fonction 'mode'!") if(!EstSTRING($valeur));
+	return AST::ERROR("N'est pas du texte, pour fonction 'mode'!") if(!AST::EstSTRING($valeur));
 	my $texte = $valeur->[1];
 	if($texte eq 'LIGNE'){
 #		do_mode_LIGNE();
@@ -1696,7 +1222,7 @@ sub internal_MODE{
 		do_mode_TAMPON();
 #		return ['VOID'];
 	}
-	return MakeAST_ERROR("Mode $texte inconnu !");
+	return AST::ERROR("Mode $texte inconnu !");
 }
 
 sub do_mode_LIGNE{
@@ -1729,87 +1255,87 @@ sub Call_Internal{
 	my $hasElement = 1;
 	while($hasElement){
 		my $element = $nextArgument->();
-		if(!EstNULL($element)){
+		if(!AST::EstNULL($element)){
 			# ATTENTION:
 			# parametres gloutons pour l'instant
 			my $val = MakeSUB($element)->($context);
-			return $val if(EstUneERREUR($val));
+			return $val if(AST::EstUneERREUR($val));
 			push(@parameters, $val);
 		}else{
 			$hasElement = 0;
 		}
 	}
-	my $iFunc = getINTERNALFUNC($internalFunction);
+	my $iFunc = AST::getINTERNALFUNC($internalFunction);
 	$iFunc->($context,@parameters);
 }
 sub internal_ROUND{
 	my $context = shift;
 	my $valeur  = shift;
-	return MakeAST_ERROR("N'est pas numerique, pour arrondi !". $valeur->[1]) if(!EstNUMERIC($valeur));
-	return MakeAST_NUMERIC(sprintf("%.4f", $valeur->[1]));
+	return AST::ERROR("N'est pas numerique, pour arrondi !". $valeur->[1]) if(!AST::EstNUMERIC($valeur));
+	return AST::NUMERIC(sprintf("%.4f", $valeur->[1]));
 }
 
 sub internal_ARRONDIS{
 	my $context = shift;
 	my $valeur  = shift;
-	return MakeAST_ERROR("N'est pas numerique, pour arrondi !") if(!EstNUMERIC($valeur));
-	return MakeAST_NUMERIC(sprintf("%.0f", $valeur->[1]));
+	return AST::ERROR("N'est pas numerique, pour arrondi !") if(!AST::EstNUMERIC($valeur));
+	return AST::NUMERIC(sprintf("%.0f", $valeur->[1]));
 }
 
 sub internal_HASARD{ 
 	my $context = shift;
 	my $valeur = shift;
-	return MakeAST_ERROR("N'est pas numerique, pour hasard !") if(!EstNUMERIC($valeur));
-	return MakeAST_NUMERIC(rand($valeur->[1]));
+	return AST::ERROR("N'est pas numerique, pour hasard !") if(!AST::EstNUMERIC($valeur));
+	return AST::NUMERIC(rand($valeur->[1]));
 }
 
 sub internal_LENGTH{
 	my $context = shift;
 	my $valeur = shift; 
 	#La longueur d'un tablo est scalar(@tablo)
-	if(EstTABLO($valeur)){
+	if(AST::EstTABLO($valeur)){
 		my $tab= $valeur->[2];
 		my $long = scalar(@$tab);
-		return MakeAST_NUMERIC($long);
+		return AST::NUMERIC($long);
 	}
-	if(EstVOID($valeur)){
-		return MakeAST_NUMERIC(0);
+	if(AST::EstVOID($valeur)){
+		return AST::NUMERIC(0);
 	}
-	return MakeAST_ERROR("N'est pas du texte !".$valeur->[0]." ".$valeur->[1]) if(!(EstSTRING($valeur) || EstNUMERIC($valeur)));
+	return AST::ERROR("N'est pas du texte !".$valeur->[0]." ".$valeur->[1]) if(!(AST::EstSTRING($valeur) || AST::EstNUMERIC($valeur)));
 	my $val = $valeur->[1];
-	$val = "$val" if(EstNUMERIC($valeur));
-	return MakeAST_NUMERIC(length($val));
+	$val = "$val" if(AST::EstNUMERIC($valeur));
+	return AST::NUMERIC(length($val));
 }
 
 sub internal_RESTE{
 	my $context = shift;
 	my $valeur1 = shift;
-	return $valeur1 if(EstUneERREUR($valeur1));
+	return $valeur1 if(AST::EstUneERREUR($valeur1));
 	my $valeur2 = shift;
-	return $valeur2 if(EstUneERREUR($valeur2));
-	return MakeAST_NUMERIC($valeur1->[1] % $valeur2->[1]);
+	return $valeur2 if(AST::EstUneERREUR($valeur2));
+	return AST::NUMERIC($valeur1->[1] % $valeur2->[1]);
 }
 
 sub internal_POW{
 	my $context = shift;
 	my $valeur1 = shift;
-	return $valeur1 if(EstUneERREUR($valeur1));
+	return $valeur1 if(AST::EstUneERREUR($valeur1));
 	my $valeur2 = shift;
-	return $valeur2 if(EstUneERREUR($valeur1));
-	return MakeAST_NUMERIC(($valeur1->[1]) ** $valeur2->[1]);
+	return $valeur2 if(AST::EstUneERREUR($valeur1));
+	return AST::NUMERIC(($valeur1->[1]) ** $valeur2->[1]);
 }
 
 sub internal_SQRT{
 	my $context = shift;
 	my $valeur1 = shift;
-	return $valeur1 if(EstUneERREUR($valeur1));
-	return MakeAST_NUMERIC(sqrt($valeur1->[1]));
+	return $valeur1 if(AST::EstUneERREUR($valeur1));
+	return AST::NUMERIC(sqrt($valeur1->[1]));
 }
 
 sub internal_PRINT{
 	my $context = shift;
 	my $valeur = shift;
-	return MakeAST_ERROR("N'est pas printable !") if(!(EstSTRING($valeur) || EstNUMERIC($valeur)));
+	return AST::ERROR("N'est pas printable !") if(!(AST::EstSTRING($valeur) || AST::EstNUMERIC($valeur)));
 	if($GLOBAL_MODE eq 'LIGNE'){
 		print $valeur->[1] ;
 	}else{
@@ -1822,7 +1348,7 @@ sub internal_PRINT{
 sub internal_PAUSE{
 	my $context = shift;
 	my $valeur = shift;
-	return MakeAST_ERROR("N'est pas numerique !") if(!EstNUMERIC($valeur));
+	return AST::ERROR("N'est pas numerique !") if(!AST::EstNUMERIC($valeur));
 	Time::HiRes::sleep($valeur->[1]);
 	return ['VOID'];
 }
@@ -1830,41 +1356,41 @@ sub internal_PAUSE{
 sub internal_EXECUTE{
 	my $context = shift;
 	my $valeur = shift;
-	return MakeAST_ERROR("N'est pas executable !") if(!EstSTRING($valeur));
+	return AST::ERROR("N'est pas executable !") if(!AST::EstSTRING($valeur));
 	my $executable=$valeur->[1];
 	my $retour=`$executable`;
-	return MakeAST_STRING($retour);
+	return AST::STRING($retour);
 }
 
 sub internal_PEEK{
 	my $context = shift;
 	my $valeur = shift;
-	return MakeAST_ERROR("N'est pas numerique !") if(!EstNUMERIC($valeur));
+	return AST::ERROR("N'est pas numerique !") if(!AST::EstNUMERIC($valeur));
 	my $adresse=$valeur->[1];
 	my $executable = "dir ";
 	my $retour=`$executable $adresse`;
 	return MakeVRAI() if($retour == 1);
 	return MakeFAUX()  if($retour == 0);
-	return MakeAST_ERROR("Valeur non booleenne !");
+	return AST::ERROR("Valeur non booleenne !");
 }
 
 sub internal_POKE{
 	my $context = shift;
 	my $adresse = shift;
-	return MakeAST_ERROR("Adresse n'est pas numerique !") if(!EstNUMERIC($adresse));
+	return AST::ERROR("Adresse n'est pas numerique !") if(!AST::EstNUMERIC($adresse));
 	my $bit = shift;
-	return MakeAST_ERROR("Bit n'est pas digital !") if(!EstBOOLEAN($bit));
+	return AST::ERROR("Bit n'est pas digital !") if(!AST::EstBOOLEAN($bit));
 	my $executable='gpio -1 write';
 	my $addr = $adresse->[1];
 	my $binaryDigit;
-	if(EstVRAI($bit)){
+	if(AST::EstVRAI($bit)){
 		$binaryDigit=1;
 	}else{
 		$binaryDigit=0;
 	}
 	gpioModeWrite($addr);
 	my $retour=`$executable $addr $binaryDigit`;
-	return MakeAST_STRING($retour);
+	return AST::STRING($retour);
 }
 
 sub gpioModeWrite{
@@ -1888,7 +1414,7 @@ sub bracketOnTablo{
 	my $currentArgument = $nextArgument->();
 	my $valeur = MakeSUB($currentArgument)->($context);
 
-	return MakeAST_ERROR("N'est ni du texte, ni numerique !".$valeur->[0]." ".$valeur->[1]) if(!(EstSTRING($valeur) || EstNUMERIC($valeur)));
+	return AST::ERROR("N'est ni du texte, ni numerique !".$valeur->[0]." ".$valeur->[1]) if(!(AST::EstSTRING($valeur) || AST::EstNUMERIC($valeur)));
 
 	my $val = $valeur->[1];
 
@@ -1902,24 +1428,24 @@ sub bracketOnString{
 	my $currentArgument = $nextArgument->();
 	my $valeur = MakeSUB($currentArgument)->($context);
 
-	return MakeAST_ERROR("N'est ni du texte, ni numerique !".$valeur->[0]." ".$valeur->[1]) if(!(EstSTRING($valeur) || EstNUMERIC($valeur)));
+	return AST::ERROR("N'est ni du texte, ni numerique !".$valeur->[0]." ".$valeur->[1]) if(!(AST::EstSTRING($valeur) || AST::EstNUMERIC($valeur)));
 
 	my $val = $valeur->[1];
 
-	if(EstNUMERIC($valeur)){
-		return MakeAST_ERROR("$val > longueur de ". $phrase->[1]) if($val>length($phrase->[1]));
-		return MakeAST_STRING(substr($phrase->[1],$val,1))
+	if(AST::EstNUMERIC($valeur)){
+		return AST::ERROR("$val > longueur de ". $phrase->[1]) if($val>length($phrase->[1]));
+		return AST::STRING(substr($phrase->[1],$val,1))
 	}
 	if($val eq 'maillon'){
-		return MakeAST_STRING(substr($phrase->[1],0,1));
+		return AST::STRING(substr($phrase->[1],0,1));
 	}
 	else{
 		if($val eq 'suite'){
 			return ['VOID'] if(substr($phrase->[1],1) eq '');
-			return MakeAST_STRING(substr($phrase->[1],1));
+			return AST::STRING(substr($phrase->[1],1));
 		}
 	}
-	return MakeAST_ERROR("Methode " . $val . " inconnu pour du texte !");
+	return AST::ERROR("Methode " . $val . " inconnu pour du texte !");
 }
 sub bracketOnNumeric{
 	my $context =  shift;
@@ -1952,23 +1478,23 @@ sub bracketOnLambda{
 	my $nextLambdaArg= MakeIterator_LIST($lambdaArgsList);
 	while(1){
 		my $currentArgument = $nextArgument->();
-		last if(EstNULL($currentArgument));
+		last if(AST::EstNULL($currentArgument));
 		my $currentLambdaArg= $nextLambdaArg->();
-		return MakeAST_ERROR("La fonction ".$funcName." comporte moins d'arguments !") if(EstNULL($currentLambdaArg));
-		return MakeAST_ERROR("L'identifiant " . $currentLambdaArg->[0]. " de la fonction " . $funcName . " n'est pas un identifiant !") if(!EstID($currentLambdaArg));
+		return AST::ERROR("La fonction ".$funcName." comporte moins d'arguments !") if(AST::EstNULL($currentLambdaArg));
+		return AST::ERROR("L'identifiant " . $currentLambdaArg->[0]. " de la fonction " . $funcName . " n'est pas un identifiant !") if(!AST::EstID($currentLambdaArg));
 		my $argName = $currentLambdaArg->[1];
 		# On calcul les arguments comme des gloutons
 		# pour ne pas se melanger les pinceaux entre
 		# les arguments de la fonctions et les arguments
 		# de la closure (la fermeture quoi !)
 		my $valeur = MakeSUB($currentArgument)->($context);
-		print "DEBUG: pour $argName, " . Dumper($valeur) . "\n" if(defined Context_get($context,'TRON') && EstVRAI(Context_get($context,'TRON')));
-		return $valeur if(EstUneERREUR($valeur));
+		print "DEBUG: pour $argName, " . Dumper($valeur) . "\n" if(defined Context_get($context,'TRON') && AST::EstVRAI(Context_get($context,'TRON')));
+		return $valeur if(AST::EstUneERREUR($valeur));
 		Context_set($paramContext, $argName, $valeur);
 	}
 	Context_setParent($paramContext, $lambdaContext);
 	my $retour = MakeSUB($code)->($paramContext);
-	print "Resultat de $funcName: " . Dumper($retour) if(defined Context_get($context,'TRON') && EstVRAI(Context_get($context,'TRON')));;
+	print "Resultat de $funcName: " . Dumper($retour) if(defined Context_get($context,'TRON') && AST::EstVRAI(Context_get($context,'TRON')));;
 	return $retour;
 }
 sub MakeSUB_BRACKET{
@@ -1980,13 +1506,13 @@ sub MakeSUB_BRACKET{
 		my $context = shift;
 		my $lambda;
 
-		if(EstID($funcExpr)){
+		if(AST::EstID($funcExpr)){
 			$funcName = $AST->[1]->[1];
 
 			$lambda = Context_get($context,$funcName);
-			return MakeAST_ERROR("FONCTION $funcName NON DEFINIE") if(!defined $lambda);
+			return AST::ERROR("FONCTION $funcName NON DEFINIE") if(!defined $lambda);
 
-			if(EstID($lambda)){
+			if(AST::EstID($lambda)){
 				#A surveiller !!!!
 				#Necessaire lorsque l'on utilise un '=' et non '<-'
 				#On doit determiner de quel type est lambda
@@ -1996,32 +1522,32 @@ sub MakeSUB_BRACKET{
 		}else{
 			$lambda = MakeSUB($funcExpr )->($context);
 
-			if(EstID($lambda)){
+			if(AST::EstID($lambda)){
 				#Cas du deflambda !
 				$lambda = MakeSUB($lambda)->($context);
 			}
 		}
 
-		return bracketOnTablo($context, MakeSUB($lambda)->($context), $arguments) if(EstDEFTABLO($lambda));
-		return bracketOnString($context, MakeSUB($lambda)->($context), $arguments) if(EstSTRINGQUOTE($lambda));
+		return bracketOnTablo($context, MakeSUB($lambda)->($context), $arguments) if(AST::EstDEFTABLO($lambda));
+		return bracketOnString($context, MakeSUB($lambda)->($context), $arguments) if(AST::EstSTRINGQUOTE($lambda));
 
-		return bracketOnString($context,$lambda, $arguments) if(EstSTRING($lambda));
-		return bracketOnTablo($context,$lambda, $arguments) if(EstTABLO($lambda));
-		return bracketOnNumeric($context,$lambda, $arguments) if(EstNUMERIC($lambda));
+		return bracketOnString($context,$lambda, $arguments) if(AST::EstSTRING($lambda));
+		return bracketOnTablo($context,$lambda, $arguments) if(AST::EstTABLO($lambda));
+		return bracketOnNumeric($context,$lambda, $arguments) if(AST::EstNUMERIC($lambda));
 
-		return Call_Internal($context,$lambda, $arguments) if(EstINTERNALFUNC($lambda));
+		return Call_Internal($context,$lambda, $arguments) if(AST::EstINTERNALFUNC($lambda));
 
-		return bracketOnLambda($context,$lambda, $arguments, $funcName) if(EstLAMBDA($lambda));
+		return bracketOnLambda($context,$lambda, $arguments, $funcName) if(AST::EstLAMBDA($lambda));
 
-		if(!EstLAMBDA($lambda)){
+		if(!AST::EstLAMBDA($lambda)){
 			my $err = Dumper($lambda);
-			return MakeAST_ERROR("n'est pas une fonction: $err");
+			return AST::ERROR("n'est pas une fonction: $err");
 		}
 
 		return ['VOID'];
 
 
-		print "DEBUG: Lambda $funcName\n" if(defined Context_get($context,'TRON') && EstVRAI(Context_get($context,'TRON')));
+		print "DEBUG: Lambda $funcName\n" if(defined Context_get($context,'TRON') && AST::EstVRAI(Context_get($context,'TRON')));
 
 		my $lambdaArgsList = $lambda->[1];
 		my $code = $lambda->[2];
@@ -2035,23 +1561,23 @@ sub MakeSUB_BRACKET{
 		my $nextLambdaArg= MakeIterator_LIST($lambdaArgsList);
 		while(1){
 			my $currentArgument = $nextArgument->();
-			last if(EstNULL($currentArgument));
+			last if(AST::EstNULL($currentArgument));
 			my $currentLambdaArg= $nextLambdaArg->();
-			return MakeAST_ERROR("La fonction ".$funcName." comporte moins d'arguments !") if(EstNULL($currentLambdaArg));
-			return MakeAST_ERROR("L'identifiant " . $currentLambdaArg->[0]. " de la fonction " . $funcName . " n'est pas un identifiant !") if(!EstID($currentLambdaArg));
+			return AST::ERROR("La fonction ".$funcName." comporte moins d'arguments !") if(AST::EstNULL($currentLambdaArg));
+			return AST::ERROR("L'identifiant " . $currentLambdaArg->[0]. " de la fonction " . $funcName . " n'est pas un identifiant !") if(!AST::EstID($currentLambdaArg));
 			my $argName = $currentLambdaArg->[1];
 			# On calcul les arguments comme des gloutons
 			# pour ne pas se melanger les pinceaux entre
 			# les arguments de la fonctions et les arguments
 			# de la closure (la fermeture quoi !)
 			my $valeur = MakeSUB($currentArgument)->($context);
-			print "DEBUG: pour $argName, " . Dumper($valeur) . "\n" if(defined Context_get($context,'TRON') && EstVRAI(Context_get($context,'TRON')));
-			return $valeur if(EstUneERREUR($valeur));
+			print "DEBUG: pour $argName, " . Dumper($valeur) . "\n" if(defined Context_get($context,'TRON') && AST::EstVRAI(Context_get($context,'TRON')));
+			return $valeur if(AST::EstUneERREUR($valeur));
 			Context_set($paramContext, $argName, $valeur);
 		}
 		Context_setParent($paramContext, $lambdaContext);
 		my $retour = MakeSUB($code)->($paramContext);
-		print "Resultat de $funcName: " . Dumper($retour) if(defined Context_get($context,'TRON') && EstVRAI(Context_get($context,'TRON')));;
+		print "Resultat de $funcName: " . Dumper($retour) if(defined Context_get($context,'TRON') && AST::EstVRAI(Context_get($context,'TRON')));;
 		return $retour;
 	}
 }
@@ -2073,12 +1599,12 @@ sub MakeSUB_POURCONTEXT{
 		my $nextAllocate = MakeIterator_LIST($allocates);
 		while(1){
 			my $currentAllocate = $nextAllocate->();
-			last if(EstNULL($currentAllocate));
+			last if(AST::EstNULL($currentAllocate));
 			my $id = $currentAllocate->[1];
 			my $idName = $id->[1];
 			my $value = $currentAllocate->[2];
 			my $valeur = MakeSUB($value)->($context);
-			return $valeur if(EstUneERREUR($valeur));
+			return $valeur if(AST::EstUneERREUR($valeur));
 			Context_set($newContext, $idName, $valeur);
 		}
 		Context_setParent($newContext, $context);
@@ -2097,30 +1623,30 @@ sub MakeSUB_BOUCLEPOUR{
 		my $context = shift;
 		
 		my $first = MakeSUB($firstValue)->($context);
-		return $first if(EstUneERREUR($first));
-		return MakeAST_ERROR("Valeur d'initialisation de boucle 'pour' n'est pas Numerique") if(!EstNUMERIC($first));
+		return $first if(AST::EstUneERREUR($first));
+		return AST::ERROR("Valeur d'initialisation de boucle 'pour' n'est pas Numerique") if(!AST::EstNUMERIC($first));
 		my $last  = MakeSUB($lastValue)->($context);
-		return $last if(EstUneERREUR($last));
-		return MakeAST_ERROR("Valeur de fin de boucle 'pour' n'est pas Numerique") if(!EstNUMERIC($last));
+		return $last if(AST::EstUneERREUR($last));
+		return AST::ERROR("Valeur de fin de boucle 'pour' n'est pas Numerique") if(!AST::EstNUMERIC($last));
 		my $inc = MakeSUB($increment)->($context);
-		return $inc if(EstUneERREUR($inc));
-		return MakeAST_ERROR("Valeur d'increment de boucle 'pour' n'est pas Numerique") if(!EstNUMERIC($inc));
+		return $inc if(AST::EstUneERREUR($inc));
+		return AST::ERROR("Valeur d'increment de boucle 'pour' n'est pas Numerique") if(!AST::EstNUMERIC($inc));
 		my $var_name = $Identifiant->[1];
 		my $valeur = $first->[1];
 		my $instruct = MakeSUB($instructions);
 		my $result;
 		my $newContext = Context_New();
-		Context_set($newContext,$var_name,MakeAST_NUMERIC($valeur));
+		Context_set($newContext,$var_name,AST::NUMERIC($valeur));
 		Context_setParent($newContext, $context);
 		while($valeur <= $last->[1]){
-			Context_set($newContext,$var_name,MakeAST_NUMERIC($valeur));
+			Context_set($newContext,$var_name,AST::NUMERIC($valeur));
 			$result = $instruct->($newContext);
-			return $result if(EstUneERREUR($result));
+			return $result if(AST::EstUneERREUR($result));
 			#On incremente valeur (qui a pu etre modifiee
 			#par le programme)
 			$valeur = Context_get($newContext,$var_name)->[1];
 			$valeur += $inc->[1];
-			Context_set($newContext,$var_name,MakeAST_NUMERIC($valeur));
+			Context_set($newContext,$var_name,AST::NUMERIC($valeur));
 		}
 		return $result;
 	}
@@ -2144,14 +1670,14 @@ sub MakeSUB_POURCHAQUE{
 		my $onContinue = 1;
 		while($onContinue){
 			$valeur = MakeSUB_BRACKET(['',$liste,['LIST_GENERIC',['NUMERIC',0],['NULL']]])->($context);
-			return $valeur if(EstUneERREUR($valeur ));
+			return $valeur if(AST::EstUneERREUR($valeur ));
 			Context_set($newContext,$var_name,$valeur);
 			$result = $instruct->($newContext);
-			return $result if(EstUneERREUR($result));
+			return $result if(AST::EstUneERREUR($result));
 			my $suite = MakeSUB_BRACKET(['',$liste,['LIST_GENERIC',['STRING','suite'],['NULL']]])->($context);
-			return $suite if(EstUneERREUR($suite));
+			return $suite if(AST::EstUneERREUR($suite));
 			$liste = $suite;
-			$onContinue = 0 if(EstVOID($suite));
+			$onContinue = 0 if(AST::EstVOID($suite));
 		}
 		return $result;
 	}
@@ -2169,24 +1695,24 @@ sub addInternalFunc{
 sub installInternalFunc{
 	my $context = shift;
 	addInternalFunc($context,
-		['round', MakeAST_INTERNALFUNC(\&internal_ROUND)],
-		['entier', MakeAST_INTERNALFUNC(\&internal_ARRONDIS)],
-		['hasard', MakeAST_INTERNALFUNC(\&internal_HASARD  )],
-		['longueur', MakeAST_INTERNALFUNC(\&internal_LENGTH)],
-		['ecris', MakeAST_INTERNALFUNC(\&internal_PRINT)],
-		['reste', MakeAST_INTERNALFUNC(\&internal_RESTE)],
-		['pow', MakeAST_INTERNALFUNC(\&internal_POW)],
-		['sqrt', MakeAST_INTERNALFUNC(\&internal_SQRT)],
-		['pause', MakeAST_INTERNALFUNC(\&internal_PAUSE)],
-		['execute', MakeAST_INTERNALFUNC(\&internal_EXECUTE)],
-		['peek', MakeAST_INTERNALFUNC(\&internal_PEEK)],
-		['poke', MakeAST_INTERNALFUNC(\&internal_POKE)],
-		['mode', MakeAST_INTERNALFUNC(\&internal_MODE)],
-		['pos' , MakeAST_INTERNALFUNC(\&internal_POS)],
-		['rafraichis', MakeAST_INTERNALFUNC(\&internal_RAFRAICHIS)],
-		['efface' , MakeAST_INTERNALFUNC(\&internal_EFFACE)],
-		['max_X' , MakeAST_INTERNALFUNC(\&internal_MAXX)],
-		['max_Y' , MakeAST_INTERNALFUNC(\&internal_MAXY)],
+		['round', AST::INTERNALFUNC(\&internal_ROUND)],
+		['entier', AST::INTERNALFUNC(\&internal_ARRONDIS)],
+		['hasard', AST::INTERNALFUNC(\&internal_HASARD  )],
+		['longueur', AST::INTERNALFUNC(\&internal_LENGTH)],
+		['ecris', AST::INTERNALFUNC(\&internal_PRINT)],
+		['reste', AST::INTERNALFUNC(\&internal_RESTE)],
+		['pow', AST::INTERNALFUNC(\&internal_POW)],
+		['sqrt', AST::INTERNALFUNC(\&internal_SQRT)],
+		['pause', AST::INTERNALFUNC(\&internal_PAUSE)],
+		['execute', AST::INTERNALFUNC(\&internal_EXECUTE)],
+		['peek', AST::INTERNALFUNC(\&internal_PEEK)],
+		['poke', AST::INTERNALFUNC(\&internal_POKE)],
+		['mode', AST::INTERNALFUNC(\&internal_MODE)],
+		['pos' , AST::INTERNALFUNC(\&internal_POS)],
+		['rafraichis', AST::INTERNALFUNC(\&internal_RAFRAICHIS)],
+		['efface' , AST::INTERNALFUNC(\&internal_EFFACE)],
+		['max_X' , AST::INTERNALFUNC(\&internal_MAXX)],
+		['max_Y' , AST::INTERNALFUNC(\&internal_MAXY)],
 	);
 }
 
@@ -2194,61 +1720,92 @@ sub installInternalFunc{
 sub load{
 	my $context = shift;
 	my $file= (shift || "code");
+	my $file2 = $file . ".cmp";
 	$file .= ".bas";
 	if(-e $file){
 		say "loading $file";
-		open(my $F, '<', $file);
-		my $fichier = "";
-		while(my $ligne = <$F>){
-			#On ignore les commemtaire (commencent par #)
-			#ainsi que les lignes vides
-			if($ligne !~ /^\s*#/ && ($ligne !~ /^\s*$/)){
+		# Si le fichier compil existe et sa date de modification
+		# est supperieure a celle du fichier source
+		if(-e $file2 && ((stat($file))[9] < (stat($file2))[9])){
+			#On lis le fichier compil pour l'ast
+			open(my $F2, '<', $file2);
+			my $txt = <$F2>;
+			close($F2);
+			my $ast = Compile::String2AST($txt);
+			say Dumper($ast);
+			TraiteAST($ast, $context);
+			return;
+		}else{
+			open(my $F, '<', $file);
+			my $fichier = "";
+			while(my $ligne = <$F>){
+				#On ignore les commemtaire (commencent par #)
+				#ainsi que les lignes vides
+				#chomp($ligne);
+				if($ligne !~ /^\s*#/ && ($ligne !~ /^\s*$/)){
 					#On ajoute ; en fin de ligne
 					#sauf si elle finit par la REGEX
 					$ligne .=';' if($ligne !~ /(\,|:|\{|=|<-|;|\(|si|alors|sinon|jusqu'a)\s*$/);
 					#On enleve le ; en fin de la precedente ligne
 					#si la nouvelle ligne commence par la REGEX
 					$fichier =~ s/(.*);$/$1/ if($ligne =~ /^\s*(\,|:|\}|=|<-|;|\)|alors|sinon|suivant|fin|jusqu'a)/);
-				$fichier .= $ligne;
+					$fichier .= $ligne;
+					#chomp($fichier);
+				}
 			}
+			print $fichier . "\n";
+			my $ast = ligne2AST($fichier, $context);
+			say Dumper($ast);
+			my $line= Compile::AST2String($ast);
+			open(my $F3, '>', $file2);
+			print $F3 $line;
+			close($F3);
+			say $line;
+			TraiteAST($ast, $context);
+			#TraiteLigne($fichier, $context);
 		}
-		print $fichier . "\n";
-		TraiteLigne($fichier, $context);
 	}else{
 		say "Fichier $file inexistant";
 	}
 }
 
-sub TraiteLigne{
-	my $input   = shift;
+sub TraiteAST{
+	my $ast = shift;
 	my $context = shift;
-	chomp($input);
-	unless($input =~ /^\s*$/){
-		return if($input =~ /^\s*#/);
-		my $ast = $parser->startrule(\$input);
-		$input =~ s/\s*$//;
-		if($input ne "" && $input !~ /\s*;\s*/){
-			say "Erreur de syntaxe au niveau de **$input**";
-			return;
-		}
-		print Dumper($ast) if(defined Context_get($context,'CLU') && EstVRAI(Context_get($context,'CLU')));
-		$ast = RemoveNOTHING($ast, 0);
-		print Dumper($ast) if(defined Context_get($context,'TRON') && EstVRAI(Context_get($context,'TRON')));
-		my $sub = MakeSUB($ast);
-		my $resultatSUB = $sub->($context);
-		if(defined Context_get($context,'TRON') && EstVRAI(Context_get($context,'TRON'))){
+	my $sub = MakeSUB($ast);
+	my $resultatSUB = $sub->($context);
+	if(AST::EstUneERREUR($resultatSUB)){
+		print $resultatSUB->[0] . ": " . $resultatSUB->[1] . "\n";
+	}else{
+		if(defined Context_get($context,'TRON') && AST::EstVRAI(Context_get($context,'TRON'))){
 			say "Resultat:";
 			print Dumper($resultatSUB);
 		}else{
-			if(EstUneERREUR($resultatSUB)){
-				print $resultatSUB->[0] . ": " . $resultatSUB->[1] . "\n";
-			}else{
-				#ATTENTION, gros hack !!!
-				MakeSUB_AFFICHE(['AFFICHE',$resultatSUB])->($context) unless(EstVOID($resultatSUB));
-			}
+			#ATTENTION, gros hack !!!
+			MakeSUB_AFFICHE(['AFFICHE',$resultatSUB])->($context) unless(AST::EstVOID($resultatSUB));
 		}
-		
 	}
+}
+sub ligne2AST{
+	my $input = shift;
+	my $context = shift;
+	chomp($input);
+	return ['VOID'] if($input =~ /^\s*$/);
+	return ['VOID'] if($input =~ /^\s*\#/ );
+	#my $ast = $parser->startrule(\$input);
+	my $ast = ParserRecdescent::getAST(\$input);
+	$input =~ s/\s*$//;
+	return AST::ERROR("Erreur de syntaxe au niveau de **$input**") if($input ne "" && $input !~ /\s*;\s*/);
+	$ast = RemoveNOTHING($ast, 0);
+	print Dumper($ast) if(defined Context_get($context,'TRON') && AST::EstVRAI(Context_get($context,'TRON')));
+	return $ast;
+}
+
+sub TraiteLigne{
+	my $input   = shift;
+	my $context = shift;
+
+	return TraiteAST(ligne2AST($input,$context), $context);
 }
 
 my $context = Context_New();
