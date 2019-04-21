@@ -279,6 +279,10 @@ sub EstINPUT{
 	return Est_de_TYPE($_[0],'INPUT');
 }
 
+sub EstINSPECT{
+	return Est_de_TYPE($_[0],'INSPECT');
+}
+
 
 sub LIST_VARIABLES{
 	my $context = shift;

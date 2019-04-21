@@ -8,6 +8,7 @@ use Time::HiRes;
 use ParserRecdescent;
 use Compile;
 use AST;
+use Context;
 #use Curses;
 use Term::ReadLine;
 
@@ -83,69 +84,6 @@ foreach my $i (1..40){
 }
 
 
- 
-##############################################
-# On s'occupe du context !
-##############################################
-
-sub Context_New{
-	my $parent = shift;
-	$parent = ['NULL'] if(!defined $parent);
-	my $innerContext = {};
-	return ['CONTEXT',$innerContext, $parent];
-}
-
-sub Context_setParent{
-	my $context = shift;
-	my $parent  = shift;
-	$context->[2] = $parent;
-	return $context;
-}
-
-sub Context_get{
-	my $context = shift;
-	my $name    = shift;
-	return AST::ERROR("N'est pas un context " . Dumper($context)) if(!AST::EstCONTEXT($context));
-	my $value = $context->[1]->{$name};
-	if(defined $value){
-		#print "Context_get value:" . Dumper($value). "\n";
-		return $value;
-	}else{
-		my $parent =$context->[2];
-		#print "Context_get value: indefinie\n";
-		if(AST::EstCONTEXT($parent)){
-			#print "Context_get value: parent est un context, on lui passe la main\n";
-			return Context_get($parent, $name);
-		}else{
-			#print "Context_get value: parent n'est pas un context, on ne renvoie rien !\n";
-			return undef;
-		}
-	}
-}
-
-# Pour l'instant on ecrit 
-# dans la premiere variable existante
-# on affinera plus tard
-sub Context_set{
-	my $context = shift;
-	my $name    = shift;
-	my $value   = shift;
-
-	return AST::ERROR("N'est pas un context " . Dumper($context)) if(!AST::EstCONTEXT($context));
-
-	if(defined $context->[1]->{$name}){
-		$context->[1]->{$name} = $value;
-	}else{
-		my $parent = $context->[2];
-		if(AST::EstCONTEXT($parent)){
-			Context_set($parent, $name, $value);
-		}else{
-			#On cree la variable !
-			$context->[1]->{$name} = $value;
-		}
-	}
-}
-##############################################
 
 	# Renvois une fonction renvoyant
 	# Vrais quelque soient ses arguments
@@ -360,7 +298,7 @@ sub MakeSUB_INSPECT{
 		if($AST->[1]->[0] eq 'ID'){
 			print "DEEPER: ";
 			my $name = $AST->[1]->[1];
-			my $value = Context_get($context, $name);
+			my $value = Context::get($context, $name);
 			if(AST::EstLAMBDA($value)){
 				print Dumper($value->[2]);
 			}else{
@@ -499,7 +437,7 @@ sub MakeSUB_ADD{
 		#return ['LAMBDA',$parameters,$code,$context];
 		# Pour l'instant on utilise que 1 parametre
 		my $parameters = ['LIST_IDENTIFIERS',['ID','x'],['NULL']];
-		my $localContext = Context_New();
+		my $localContext = Context::New();
 		#my $code = ['LIST_INSTRUCTIONS',['ADD',$lvalue,$r],['NULL']];
 	};
 	my $numerique = sub{
@@ -630,7 +568,7 @@ sub MakeSUB_CONCATENE{
 		my $rvalue  = shift;
 		# Pour l'instant on utilise que 1 parametre
 		my $parameters = ['LIST_IDENTIFIERS',['ID','x'],['NULL']];
-		my $localContext = Context_New();
+		my $localContext = Context::New();
 	};
 	my $numerique = sub{
 		my $context = shift;
@@ -868,7 +806,7 @@ sub MakeSUB_AFFECT{
 		my $var_name = $AST_ID->[1];
 		my $retour = MakeSUB($AST_VALUE)->($context);
 		return $retour if(AST::EstUneERREUR($retour));
-		Context_set($context, $var_name, $retour);
+		Context::set($context, $var_name, $retour);
 		return ['VOID'];
 	}
 }
@@ -886,7 +824,7 @@ sub MakeSUB_ASSIGN_LAZY{
 		#L'assignation n'est pas vraiment lazy
 		#Si AST_VALUE est une creation de lambda
 		$AST_VALUE = MakeSUB($AST_VALUE)->($context)if($AST_VALUE->[0] eq 'DEFLAMBDA');
-		Context_set($context, $var_name, $AST_VALUE);
+		Context::set($context, $var_name, $AST_VALUE);
 		return ['VOID'];
 	}
 }
@@ -896,7 +834,7 @@ sub MakeSUB_ID{
 		my $context = shift;
 		my $name = $id->[1];
 		return AST::LIST_VARIABLES($context) if($name eq 'CONTEXT');
-		my $localAST = Context_get($context, $name);
+		my $localAST = Context::get($context, $name);
 		return AST::ERROR("VARIABLE $name NON DEFINIE") if(!defined $localAST);
 		return MakeSUB($localAST)->($context);
 	}
@@ -1090,7 +1028,7 @@ sub MakeSUB_FUNCASSIGN{
 	my $parameters = $defunc->[2];
 	return sub{
 		my $context = shift;
-		Context_set($context, $funcName, ['LAMBDA',$parameters,$code,$context]);
+		Context::set($context, $funcName, ['LAMBDA',$parameters,$code,$context]);
 		return ['VOID'];
 	}
 }
@@ -1469,7 +1407,7 @@ sub bracketOnLambda{
 	my $code = $lambda->[2];
 	my $lambdaContext = $lambda->[3];
 	my $parentContext = $lambdaContext->[2];
-	my $paramContext = Context_New();
+	my $paramContext = Context::New();
 
 	# On assigne chaque argument a celui
 	# correspondant dans lambdaArgsList
@@ -1487,13 +1425,13 @@ sub bracketOnLambda{
 		# les arguments de la fonctions et les arguments
 		# de la closure (la fermeture quoi !)
 		my $valeur = MakeSUB($currentArgument)->($context);
-		print "DEBUG: pour $argName, " . Dumper($valeur) . "\n" if(defined Context_get($context,'TRON') && AST::EstVRAI(Context_get($context,'TRON')));
+		print "DEBUG: pour $argName, " . Dumper($valeur) . "\n" if(defined Context::get($context,'TRON') && AST::EstVRAI(Context::get($context,'TRON')));
 		return $valeur if(AST::EstUneERREUR($valeur));
-		Context_set($paramContext, $argName, $valeur);
+		Context::set($paramContext, $argName, $valeur);
 	}
-	Context_setParent($paramContext, $lambdaContext);
+	Context::setParent($paramContext, $lambdaContext);
 	my $retour = MakeSUB($code)->($paramContext);
-	print "Resultat de $funcName: " . Dumper($retour) if(defined Context_get($context,'TRON') && AST::EstVRAI(Context_get($context,'TRON')));;
+	print "Resultat de $funcName: " . Dumper($retour) if(defined Context::get($context,'TRON') && AST::EstVRAI(Context::get($context,'TRON')));;
 	return $retour;
 }
 sub MakeSUB_BRACKET{
@@ -1508,7 +1446,7 @@ sub MakeSUB_BRACKET{
 		if(AST::EstID($funcExpr)){
 			$funcName = $AST->[1]->[1];
 
-			$lambda = Context_get($context,$funcName);
+			$lambda = Context::get($context,$funcName);
 			return AST::ERROR("FONCTION $funcName NON DEFINIE") if(!defined $lambda);
 
 			if(AST::EstID($lambda)){
@@ -1546,13 +1484,13 @@ sub MakeSUB_BRACKET{
 		return ['VOID'];
 
 
-		print "DEBUG: Lambda $funcName\n" if(defined Context_get($context,'TRON') && AST::EstVRAI(Context_get($context,'TRON')));
+		print "DEBUG: Lambda $funcName\n" if(defined Context::get($context,'TRON') && AST::EstVRAI(Context::get($context,'TRON')));
 
 		my $lambdaArgsList = $lambda->[1];
 		my $code = $lambda->[2];
 		my $lambdaContext = $lambda->[3];
 		my $parentContext = $lambdaContext->[2];
-		my $paramContext = Context_New();
+		my $paramContext = Context::New();
 
 		# On assigne chaque argument a celui
 		# correspondant dans lambdaArgsList
@@ -1570,13 +1508,13 @@ sub MakeSUB_BRACKET{
 			# les arguments de la fonctions et les arguments
 			# de la closure (la fermeture quoi !)
 			my $valeur = MakeSUB($currentArgument)->($context);
-			print "DEBUG: pour $argName, " . Dumper($valeur) . "\n" if(defined Context_get($context,'TRON') && AST::EstVRAI(Context_get($context,'TRON')));
+			print "DEBUG: pour $argName, " . Dumper($valeur) . "\n" if(defined Context::get($context,'TRON') && AST::EstVRAI(Context::get($context,'TRON')));
 			return $valeur if(AST::EstUneERREUR($valeur));
-			Context_set($paramContext, $argName, $valeur);
+			Context::set($paramContext, $argName, $valeur);
 		}
-		Context_setParent($paramContext, $lambdaContext);
+		Context::setParent($paramContext, $lambdaContext);
 		my $retour = MakeSUB($code)->($paramContext);
-		print "Resultat de $funcName: " . Dumper($retour) if(defined Context_get($context,'TRON') && AST::EstVRAI(Context_get($context,'TRON')));;
+		print "Resultat de $funcName: " . Dumper($retour) if(defined Context::get($context,'TRON') && AST::EstVRAI(Context::get($context,'TRON')));;
 		return $retour;
 	}
 }
@@ -1594,7 +1532,7 @@ sub MakeSUB_POURCONTEXT{
 	my $instructions= $AST->[2];
 	return sub{
 		my $context = shift;
-		my $newContext = Context_New();
+		my $newContext = Context::New();
 		my $nextAllocate = MakeIterator_LIST($allocates);
 		while(1){
 			my $currentAllocate = $nextAllocate->();
@@ -1604,9 +1542,9 @@ sub MakeSUB_POURCONTEXT{
 			my $value = $currentAllocate->[2];
 			my $valeur = MakeSUB($value)->($context);
 			return $valeur if(AST::EstUneERREUR($valeur));
-			Context_set($newContext, $idName, $valeur);
+			Context::set($newContext, $idName, $valeur);
 		}
-		Context_setParent($newContext, $context);
+		Context::setParent($newContext, $context);
 		return MakeSUB($instructions)->($newContext);
 	}
 }
@@ -1634,18 +1572,18 @@ sub MakeSUB_BOUCLEPOUR{
 		my $valeur = $first->[1];
 		my $instruct = MakeSUB($instructions);
 		my $result;
-		my $newContext = Context_New();
-		Context_set($newContext,$var_name,AST::NUMERIC($valeur));
-		Context_setParent($newContext, $context);
+		my $newContext = Context::New();
+		Context::set($newContext,$var_name,AST::NUMERIC($valeur));
+		Context::setParent($newContext, $context);
 		while($valeur <= $last->[1]){
-			Context_set($newContext,$var_name,AST::NUMERIC($valeur));
+			Context::set($newContext,$var_name,AST::NUMERIC($valeur));
 			$result = $instruct->($newContext);
 			return $result if(AST::EstUneERREUR($result));
 			#On incremente valeur (qui a pu etre modifiee
 			#par le programme)
-			$valeur = Context_get($newContext,$var_name)->[1];
+			$valeur = Context::get($newContext,$var_name)->[1];
 			$valeur += $inc->[1];
-			Context_set($newContext,$var_name,AST::NUMERIC($valeur));
+			Context::set($newContext,$var_name,AST::NUMERIC($valeur));
 		}
 		return $result;
 	}
@@ -1663,14 +1601,14 @@ sub MakeSUB_POURCHAQUE{
 		my $valeur = ['VOID'];
 		my $instruct = MakeSUB($instructions);
 		my $result;
-		my $newContext = Context_New();
-		Context_set($newContext,$var_name,$valeur);
-		Context_setParent($newContext, $context);
+		my $newContext = Context::New();
+		Context::set($newContext,$var_name,$valeur);
+		Context::setParent($newContext, $context);
 		my $onContinue = 1;
 		while($onContinue){
 			$valeur = MakeSUB_BRACKET(['',$liste,['LIST_GENERIC',['NUMERIC',0],['NULL']]])->($context);
 			return $valeur if(AST::EstUneERREUR($valeur ));
-			Context_set($newContext,$var_name,$valeur);
+			Context::set($newContext,$var_name,$valeur);
 			$result = $instruct->($newContext);
 			return $result if(AST::EstUneERREUR($result));
 			my $suite = MakeSUB_BRACKET(['',$liste,['LIST_GENERIC',['STRING','suite'],['NULL']]])->($context);
@@ -1687,7 +1625,7 @@ sub addInternalFunc{
 	my @funcTable = @_;
 	foreach my $f (@funcTable){
 		# funcName: f->[0]; funcBody: f->[1]
-		Context_set($context, $f->[0], $f->[1]);
+		Context::set($context, $f->[0], $f->[1]);
 	}
 }
 
@@ -1776,7 +1714,7 @@ sub TraiteAST{
 	if(AST::EstUneERREUR($resultatSUB)){
 		print $resultatSUB->[0] . ": " . $resultatSUB->[1] . "\n";
 	}else{
-		if(defined Context_get($context,'TRON') && AST::EstVRAI(Context_get($context,'TRON'))){
+		if(defined Context::get($context,'TRON') && AST::EstVRAI(Context::get($context,'TRON'))){
 			say "Resultat:";
 			print Dumper($resultatSUB);
 		}else{
@@ -1796,7 +1734,7 @@ sub ligne2AST{
 	$input =~ s/\s*$//;
 	return AST::ERROR("Erreur de syntaxe au niveau de **$input**") if($input ne "" && $input !~ /\s*;\s*/);
 	$ast = RemoveNOTHING($ast, 0);
-	print Dumper($ast) if(defined Context_get($context,'TRON') && AST::EstVRAI(Context_get($context,'TRON')));
+	print Dumper($ast) if(defined Context::get($context,'TRON') && AST::EstVRAI(Context::get($context,'TRON')));
 	return $ast;
 }
 
@@ -1807,7 +1745,7 @@ sub TraiteLigne{
 	return TraiteAST(ligne2AST($input,$context), $context);
 }
 
-my $context = Context_New();
+my $context = Context::New();
 my $term = Term::ReadLine->new('KSCRIPT');
 my $prompt = "(0)> ";
 my $OUT = $term->OUT || \*STDOUT;
