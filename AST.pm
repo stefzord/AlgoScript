@@ -54,9 +54,7 @@ sub EstFAUX{
 	return 0;
 }
 
-sub EstNUMERIC{
-	my $value = shift;
-	return 1 if(Est_de_TYPE($value, 'NUMERIC'));
+sub EstNUMERIC{ my $value = shift; return 1 if(Est_de_TYPE($value, 'NUMERIC'));
 	return 0;
 }
 
@@ -95,6 +93,50 @@ sub EstCONTEXT{
 	return 0;
 }
 
+sub EstOR{
+	return Est_de_TYPE(shift,'OR');
+}
+
+sub EstAND{
+	return Est_de_TYPE($_[0],'AND');
+}
+
+sub EstXOR{
+	return Est_de_TYPE($_[0],'XOR');
+}
+
+sub EstNOT{
+	return Est_de_TYPE($_[0],'NOT');
+}
+
+sub EstADD{
+	return Est_de_TYPE($_[0],'ADD');
+}
+
+sub EstSUBS{
+	return Est_de_TYPE($_[0],'SUBS');
+}
+
+sub EstMULT{
+	return Est_de_TYPE($_[0],'MULT');
+}
+
+sub EstDIV{
+	return Est_de_TYPE($_[0],'DIV');
+}
+
+sub EstCONCATENE{
+	return Est_de_TYPE($_[0],'CONCATENE');
+}
+
+sub EstASSIGN{
+	return Est_de_TYPE($_[0],'ASSIGN');
+}
+
+sub EstAFFECT{
+	return Est_de_TYPE($_[0],'AFFECT');
+}
+
 sub TABLO{
 	my $tablo = shift;
 	my $localFunc = sub{
@@ -122,6 +164,9 @@ sub EstUneERREUR{
 	my $valeur = shift;
 	return 1 if($valeur->[0] eq 'ERROR');
 	return 0;
+}
+sub EstERROR{
+	return EstUneERREUR($_[0]);
 }
 
 sub ERROR{
@@ -152,10 +197,30 @@ sub EstNOTHING{
 }
 
 # A verifier l'utilite de cette fonction
-sub EstLISTINSTRUCTIONS{
+sub EstLIST_INSTRUCTIONS{
 	my $valeur = shift;
 	return 1 if($valeur->[0] eq 'LIST_INSTRUCTIONS');
 	return 0;
+}
+
+sub EstCONDITION{
+	return Est_de_TYPE($_[0],'CONDITION');
+}
+
+sub EstTANTQUE{
+	return Est_de_TYPE($_[0],'TANTQUE');
+}
+
+sub EstEQUALITE{
+	return Est_de_TYPE($_[0],'EQUALITE');
+}
+
+sub EstSTRICTSUP{
+	return Est_de_TYPE($_[0],'STRICTSUP');
+}
+
+sub EstAFFICHE{
+	return Est_de_TYPE($_[0],'AFFICHE');
 }
 
 sub NUMERIC{
@@ -181,6 +246,39 @@ sub EstSTRINGQUOTE{
 	return 1 if($valeur->[0] eq 'STRINGQUOTE');
 	return 0;
 }
+
+sub EstBOUCLEPOUR{
+	return Est_de_TYPE($_[0],'BOUCLEPOUR');
+}
+
+sub EstPOURCONTEXT{
+	return Est_de_TYPE($_[0],'POURCONTEXT');
+}
+
+sub EstPOURCHAQUE{
+	return Est_de_TYPE($_[0],'POURCHAQUE');
+}
+
+sub EstFUNCASSIGN{
+	return Est_de_TYPE($_[0],'FUNCASSIGN');
+}
+
+sub EstDEFLAMBDA{
+	return Est_de_TYPE($_[0],'DEFLAMBDA');
+}
+
+sub EstDEFRANGE{
+	return Est_de_TYPE($_[0],'DEFRANGE');
+}
+
+sub EstBRACKET{
+	return Est_de_TYPE($_[0],'BRACKET');
+}
+
+sub EstINPUT{
+	return Est_de_TYPE($_[0],'INPUT');
+}
+
 
 sub LIST_VARIABLES{
 	my $context = shift;
